@@ -21,17 +21,6 @@ chroma_db/
 cache/
 logs/
 
-# PRD / internal docs (not for public repo)
-*-prd.md
-*.prd.md
-plan.md
-enhanceresumestructuralanalysis.md
-
-# Test data / sample files
-test_resume.*
-*.pdf
-*.docx
-
 # Editor
 .vscode/
 .idea/
@@ -40,4 +29,3 @@ test_resume.*
 .DS_Store
 Thumbs.db
 .claude/
-.plans/

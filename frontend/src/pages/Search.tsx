@@ -6,32 +6,6 @@ import { api } from "@/lib/api";
 import type { SearchResponse } from "@/lib/types";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
-import { Sticker } from "@/components/ui/badge";
-import { Reveal, Stagger } from "@/components/Reveal";
-import { LoadingIndicator } from "@/components/LoadingIndicator";
-
-/** Render Markdown bold (**text**) as <strong> without dangerouslySetInnerHTML. */
-function MarkdownText({ text }: { text: string }) {
-  const parts = text.split(/(\*\*[^*]+\*\*)/g);
-  return (
-    <>
-      {parts.map((part, i) =>
-        part.startsWith("**") && part.endsWith("**") ? (
-          <strong key={i}>{part.slice(2, -2)}</strong>
-        ) : (
-          <span key={i}>{part}</span>
-        ),
-      )}
-    </>
-  );
-}
-
-const EXAMPLE_QUERIES = [
-  "Best practices for RAG pipelines?",
-  "How to optimize Ollama inference speed?",
-  "LLM prompt caching strategies 2026",
-  "Remote ML engineer jobs India",
-];
 
 export default function SearchPage() {
   const [query, setQuery] = useState("");
@@ -42,133 +16,84 @@ export default function SearchPage() {
     onSuccess: (data) => setResult(data),
   });
 
-  const handleSubmit = (q: string) => {
-    if (q.trim()) {
-      setQuery(q.trim());
-      setResult(null);
-      mutation.mutate(q.trim());
-    }
-  };
-
   return (
-    <div className="space-y-4">
-      {/* Hero search card */}
-      <Card className="relative overflow-hidden p-6">
-        {/* Decorative corner accent */}
-        <div className="absolute -right-3 -top-3 h-16 w-16 rotate-12 rounded-lg border-2 border-ink/10 bg-cyan/10" />
-        <h2 className="mb-4 font-display text-xl font-bold">Web Search Agent</h2>
-        <p className="mb-5 text-sm text-muted-foreground">
+    <div className="space-y-6">
+      <Card className="p-6">
+        <h2 className="mb-4 text-lg font-semibold">Web Search Agent</h2>
+        <p className="mb-4 text-sm text-muted-foreground">
           Search the web and get synthesized answers with inline citations.
         </p>
         <form
           onSubmit={(e) => {
             e.preventDefault();
-            handleSubmit(query);
+            if (query.trim()) mutation.mutate(query.trim());
           }}
           className="flex gap-3"
         >
           <input
             value={query}
             onChange={(e) => setQuery(e.target.value)}
-            placeholder="Ask anything — e.g. top GenAI roles in Bengaluru..."
-            className="flex-1 rounded-md border-2 border-ink bg-cream px-4 py-3 text-sm font-mono placeholder:text-ink/40 focus:outline-none focus:ring-2 focus:ring-cyan focus:ring-offset-2 focus:ring-offset-card"
+            placeholder="e.g. top GenAI engineer roles in Bengaluru..."
+            className="flex-1 rounded-md border bg-background px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-ring"
           />
-          <Button type="submit" disabled={mutation.isPending} size="lg">
+          <Button type="submit" disabled={mutation.isPending}>
             <SearchIcon className="mr-2 h-4 w-4" />
             {mutation.isPending ? "Searching..." : "Search"}
           </Button>
         </form>
-
-        {/* Example queries — only show when no results yet */}
-        {!result && !mutation.isPending && (
-          <div className="mt-4 flex flex-wrap items-center gap-2">
-            <span className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-              Try:
-            </span>
-            {EXAMPLE_QUERIES.map((q) => (
-              <button
-                key={q}
-                onClick={() => handleSubmit(q)}
-                className="rounded-md border-2 border-ink/30 bg-beige-deep px-2.5 py-1 text-xs font-medium text-ink/70 transition-colors hover:border-ink hover:bg-blue-pale hover:text-ink"
-              >
-                {q}
-              </button>
-            ))}
-          </div>
-        )}
       </Card>
 
-      {/* Error */}
       {mutation.isError && (
         <Card className="border-destructive p-4 text-sm text-destructive">
           Error: {mutation.error.message}
         </Card>
       )}
 
-      {/* Loading */}
-      {mutation.isPending && (
-        <Reveal>
-          <LoadingIndicator message="Searching the web" />
-        </Reveal>
-      )}
-
-      {/* Results */}
       {result && (
-        <Stagger className="space-y-4">
-          {/* Answer */}
+        <>
           <Card className="p-6">
-            <div className="mb-3">
-              <Sticker variant="blue">Answer</Sticker>
-            </div>
+            <h3 className="mb-2 font-medium">Answer</h3>
             <p className="whitespace-pre-wrap text-sm leading-relaxed">
-              <MarkdownText text={result.answer} />
+              {result.answer}
             </p>
-
             {result.sub_queries_used.length > 0 && (
-              <div className="mt-4 flex flex-wrap gap-2">
-                <span className="text-xs font-semibold uppercase text-muted-foreground">Queries:</span>
+              <div className="mt-4 text-xs text-muted-foreground">
+                Sub-queries:{" "}
                 {result.sub_queries_used.map((q, i) => (
-                  <Sticker key={i} variant="muted">
+                  <span key={i} className="mr-2 inline-block rounded bg-muted px-1.5 py-0.5">
                     {q}
-                  </Sticker>
+                  </span>
                 ))}
               </div>
             )}
           </Card>
 
-          {/* Citations */}
           {result.citations.length > 0 && (
             <Card className="p-6">
-              <div className="mb-4">
-                <Sticker variant="cyan">Sources</Sticker>
-              </div>
-              <ul className="space-y-3">
+              <h3 className="mb-3 font-medium">Citations</h3>
+              <ul className="space-y-2">
                 {result.citations.map((c) => (
                   <li key={c.id} className="text-sm">
-                    <div className="flex items-start gap-3">
-                      <Sticker variant="ink" className="mt-0 shrink-0">
-                        [{c.id}]
-                      </Sticker>
-                      <div className="min-w-0">
-                        <a
-                          href={c.url}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="font-semibold text-blue break-words hover:underline"
-                        >
-                          {c.title}
-                        </a>
-                        <p className="mt-0.5 text-xs text-muted-foreground">
-                          {c.snippet}
-                        </p>
-                      </div>
-                    </div>
+                    <span className="mr-1 font-mono text-xs text-muted-foreground">
+                      [{c.id}]
+                    </span>
+                    <a
+                      href={c.url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-primary underline-offset-2 hover:underline"
+                    >
+                      {c.title}
+                    </a>
+                    <p className="mt-0.5 pl-6 text-xs text-muted-foreground">
+                      {c.snippet}
+                    </p>
                   </li>
                 ))}
               </ul>
             </Card>
           )}
-        </Stagger>
+        </>
       )}
     </div>
   );

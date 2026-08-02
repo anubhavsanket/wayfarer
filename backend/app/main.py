@@ -2,25 +2,23 @@
 
 Exposes:
 - GET /health  — dependency health check (ChromaDB, Ollama, Redis)
-- Stage 1: /api/v1/search
-- Stage 2: /api/v1/resume (check, save, primary resume management)
-- Stage 3: /api/v1/jobs
+- Stage 1: /api/v1/search (stub)
+- Stage 2: /api/v1/resume (stub)
+- Stage 3: /api/v1/jobs (stub)
 """
 from __future__ import annotations
 
 import asyncio
 import logging
 from contextlib import asynccontextmanager
-from contextvars import ContextVar
-from dataclasses import dataclass
 
 import httpx
 import redis.asyncio as redis
-from fastapi import FastAPI, File, Form, HTTPException, Query, UploadFile
+from fastapi import FastAPI, File, Form, Query, Request, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel, Field
 
 from .config import settings
+from .context import RequestOverrides, get_request_overrides, request_overrides_var
 from .llm_router import router as llm_router
 from .vector_store import store as vector_store
 from .models.schemas import (
@@ -29,7 +27,6 @@ from .models.schemas import (
     JobMatchResponse,
     LocationMode,
     ResumeCheckResponse,
-    ResumePrimaryInfo,
     ResumeSaveRequest,
     ResumeSaveResponse,
     SearchRequest,
@@ -42,42 +39,13 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-
-# ---------------------------------------------------------------------------
-# Per-request config overrides (set by middleware from X-* headers)
-# ---------------------------------------------------------------------------
-
-@dataclass
-class RequestOverrides:
-    """Per-request config overrides extracted from X-* headers.
-
-    When set, these take precedence over .env defaults for the duration
-    of a single HTTP request. Allows the Settings UI to control the
-    backend's provider, keys, and endpoints without editing .env.
-    """
-    llm_provider: str | None = None
-    nvidia_api_key: str | None = None
-    nvidia_endpoint: str | None = None
-    openrouter_api_key: str | None = None
-    openrouter_endpoint: str | None = None
-    ollama_endpoint: str | None = None
-    ollama_model: str | None = None
-    lmstudio_endpoint: str | None = None
-    lmstudio_model: str | None = None
-    tavily_api_key: str | None = None
-    brave_api_key: str | None = None
-    bluedoor_api_key: str | None = None
-
-_request_overrides: ContextVar[RequestOverrides | None] = ContextVar("request_overrides", default=None)
-
-
-def get_overrides() -> RequestOverrides:
-    """Get the current request's config overrides (empty if no overrides)."""
-    return _request_overrides.get() or RequestOverrides()
-
 # Global clients
 redis_client: redis.Redis | None = None
 http_client: httpx.AsyncClient | None = None
+
+# Background refresh worker (Redis job queue)
+refresh_worker_task: asyncio.Task | None = None
+refresh_stop_event: asyncio.Event | None = None
 
 
 async def _check_chromadb() -> DependencyStatus:
@@ -122,12 +90,15 @@ async def _check_redis() -> DependencyStatus:
 
 
 async def _check_nvidia_nim() -> DependencyStatus:
-    if not settings.NVIDIA_NIM_API_KEY:
+    overrides = get_request_overrides()
+    api_key = (overrides.nvidia_api_key if overrides and overrides.nvidia_api_key else settings.NVIDIA_NIM_API_KEY)
+    endpoint = (overrides.nvidia_endpoint if overrides and overrides.nvidia_endpoint else settings.NVIDIA_NIM_ENDPOINT)
+    if not api_key:
         return DependencyStatus(name="nvidia_nim", status="down", detail="no API key")
     try:
         await _http_get(
-            f"{settings.NVIDIA_NIM_ENDPOINT.rstrip('/')}/models",
-            headers={"Authorization": f"Bearer {settings.NVIDIA_NIM_API_KEY}"},
+            f"{endpoint.rstrip('/')}/models",
+            headers={"Authorization": f"Bearer {api_key}"},
         )
         return DependencyStatus(name="nvidia_nim", status="up", detail="API reachable")
     except Exception as exc:
@@ -135,12 +106,15 @@ async def _check_nvidia_nim() -> DependencyStatus:
 
 
 async def _check_openrouter() -> DependencyStatus:
-    if not settings.OPENROUTER_API_KEY:
+    overrides = get_request_overrides()
+    api_key = (overrides.openrouter_api_key if overrides and overrides.openrouter_api_key else settings.OPENROUTER_API_KEY)
+    endpoint = (overrides.openrouter_endpoint if overrides and overrides.openrouter_endpoint else settings.OPENROUTER_ENDPOINT)
+    if not api_key:
         return DependencyStatus(name="openrouter", status="down", detail="no API key")
     try:
         await _http_get(
-            f"{settings.OPENROUTER_ENDPOINT.rstrip('/')}/models",
-            headers={"Authorization": f"Bearer {settings.OPENROUTER_API_KEY}"},
+            f"{endpoint.rstrip('/')}/models",
+            headers={"Authorization": f"Bearer {api_key}"},
         )
         return DependencyStatus(name="openrouter", status="up", detail="API reachable")
     except Exception as exc:
@@ -150,7 +124,7 @@ async def _check_openrouter() -> DependencyStatus:
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Application lifespan: startup & shutdown."""
-    global redis_client, http_client
+    global redis_client, http_client, refresh_worker_task, refresh_stop_event
 
     # Startup
     logger.info("Starting Wayfarer API...")
@@ -179,10 +153,25 @@ async def lifespan(app: FastAPI):
                 if attempt < 3:
                     await asyncio.sleep(5 * attempt)
 
+    # Start the Redis-backed refresh worker (consumes /jobs/refresh jobs)
+    refresh_stop_event = asyncio.Event()
+    from .services.jobs_queue import run_worker
+    refresh_worker_task = asyncio.create_task(
+        run_worker(redis_client, stop_event=refresh_stop_event)
+    )
+
     yield
 
     # Shutdown
     logger.info("Shutting down...")
+    if refresh_worker_task:
+        if refresh_stop_event:
+            refresh_stop_event.set()
+        refresh_worker_task.cancel()
+        try:
+            await refresh_worker_task
+        except asyncio.CancelledError:
+            pass
     await llm_router.aclose()
     if http_client:
         await http_client.aclose()
@@ -208,32 +197,30 @@ app.add_middleware(
 
 
 @app.middleware("http")
-async def read_request_overrides(request, call_next):
-    """Read X-* headers and set per-request config overrides in context.
-
-    Allows the Settings UI to control the backend's provider, API keys,
-    and endpoints per-request without editing .env.
-    """
+async def extract_header_overrides_middleware(request: Request, call_next):
+    """Extract X-* request headers from frontend and populate request_overrides_var."""
+    headers = request.headers
     overrides = RequestOverrides(
-        llm_provider=request.headers.get("X-LLM-Provider") or None,
-        nvidia_api_key=request.headers.get("X-NVIDIA-API-Key") or None,
-        nvidia_endpoint=request.headers.get("X-NVIDIA-Endpoint") or None,
-        openrouter_api_key=request.headers.get("X-OpenRouter-API-Key") or None,
-        openrouter_endpoint=request.headers.get("X-OpenRouter-Endpoint") or None,
-        ollama_endpoint=request.headers.get("X-Ollama-Endpoint") or None,
-        ollama_model=request.headers.get("X-Ollama-Model") or None,
-        lmstudio_endpoint=request.headers.get("X-LMStudio-Endpoint") or None,
-        lmstudio_model=request.headers.get("X-LMStudio-Model") or None,
-        tavily_api_key=request.headers.get("X-Tavily-API-Key") or None,
-        brave_api_key=request.headers.get("X-Brave-API-Key") or None,
-        bluedoor_api_key=request.headers.get("X-Bluedoor-API-Key") or None,
+        llm_provider=headers.get("x-llm-provider") or None,
+        nvidia_api_key=headers.get("x-nvidia-api-key") or None,
+        nvidia_endpoint=headers.get("x-nvidia-endpoint") or None,
+        openrouter_api_key=headers.get("x-openrouter-api-key") or None,
+        openrouter_endpoint=headers.get("x-openrouter-endpoint") or None,
+        ollama_endpoint=headers.get("x-ollama-endpoint") or None,
+        lmstudio_endpoint=headers.get("x-lmstudio-endpoint") or None,
+        lmstudio_model=headers.get("x-lmstudio-model") or None,
+        custom_endpoint=headers.get("x-custom-endpoint") or None,
+        custom_api_key=headers.get("x-custom-api-key") or None,
+        custom_model=headers.get("x-custom-model") or None,
+        tavily_api_key=headers.get("x-tavily-api-key") or None,
+        brave_api_key=headers.get("x-brave-api-key") or None,
+        bluedoor_api_key=headers.get("x-bluedoor-api-key") or None,
     )
-    token = _request_overrides.set(overrides)
+    token = request_overrides_var.set(overrides)
     try:
-        response = await call_next(request)
-        return response
+        return await call_next(request)
     finally:
-        _request_overrides.reset(token)
+        request_overrides_var.reset(token)
 
 
 # ---------------------------------------------------------------------------
@@ -271,41 +258,34 @@ async def search(request: SearchRequest) -> SearchResponse:
 @app.post("/api/v1/resume/check", response_model=ResumeCheckResponse, tags=["stage2"])
 async def resume_check(
     resume_file: UploadFile | None = File(None),
+    resume_id: str | None = Form(None),
     jd_text: str = Form(...),
 ) -> ResumeCheckResponse:
-    """Stage 2: check a resume against a job description.
+    """Stage 2: check a resume (PDF/DOCX) against a job description.
 
-    FR2.10 (§8.6): If ``resume_file`` is omitted, checks the user's
-    primary resume from Settings.  If a file is provided, it's treated
-    as a one-off variant check — scored and redlined, but never silently
-    replaces the primary.
+    Supports either:
+    1. Uploading a new file (resume_file)
+    2. Referencing a previously uploaded resume (resume_id)
     """
     from .services import resume_store
     from .services.ats_checker import check_resume
+    from fastapi import HTTPException
 
-    if resume_file is not None:
-        # Variant check — upload and check against the provided file
+    if resume_file:
         content = await resume_file.read()
         if not content:
             raise HTTPException(status_code=400, detail="Uploaded resume is empty")
+
+        # Persist the upload and get a resume_id for later save
         resume_id, saved_path = resume_store.store_upload(
             content, resume_file.filename or "resume",
         )
-    else:
-        # Primary resume check — resolve from the primary index
-        resume_id = resume_store.get_primary_id()
-        if not resume_id:
-            raise HTTPException(
-                status_code=400,
-                detail="No resume file uploaded and no primary resume set. "
-                       "Upload a resume in Settings first.",
-            )
+    elif resume_id:
         saved_path = resume_store.original_file_path(resume_id)
-        if saved_path is None:
-            raise HTTPException(
-                status_code=404,
-                detail=f"Primary resume file not found on disk for {resume_id}.",
-            )
+        if not saved_path:
+            raise HTTPException(status_code=404, detail=f"Resume {resume_id} not found")
+    else:
+        raise HTTPException(status_code=400, detail="Either resume_file or resume_id must be provided")
 
     try:
         return await check_resume(str(saved_path), jd_text, resume_id=resume_id)
@@ -315,7 +295,7 @@ async def resume_check(
 
 @app.post("/api/v1/resume/save", response_model=ResumeSaveResponse, tags=["stage2"])
 async def resume_save(request: ResumeSaveRequest) -> ResumeSaveResponse:
-    """Stage 2: save accepted redline suggestions as a new file, overwrite, or set as primary."""
+    """Stage 2: save accepted redline suggestions as a new file or overwrite."""
     from .services.resume_saver import save_resume
     try:
         return await save_resume(
@@ -325,115 +305,21 @@ async def resume_save(request: ResumeSaveRequest) -> ResumeSaveResponse:
             confirm_overwrite=request.confirm_overwrite,
         )
     except ValueError as exc:
+        from fastapi import HTTPException
         raise HTTPException(status_code=400, detail=str(exc)) from exc
-
-
-# ---------------------------------------------------------------------------
-# Primary resume management (§8.6 FR2.9)
-# ---------------------------------------------------------------------------
-
-@app.get("/api/v1/resume/primary", response_model=ResumePrimaryInfo, tags=["stage2"])
-async def get_primary_resume() -> ResumePrimaryInfo:
-    """Return the current primary resume's metadata, or 404 if none is set."""
-    from .services import resume_store
-    info = resume_store.get_primary_info()
-    if info is None:
-        raise HTTPException(status_code=404, detail="No primary resume is set. Upload one in Settings.")
-    return ResumePrimaryInfo(**info)
-
-
-@app.post("/api/v1/resume/primary", response_model=ResumePrimaryInfo, tags=["stage2"])
-async def set_primary_resume(
-    resume_file: UploadFile = File(...),
-) -> ResumePrimaryInfo:
-    """Upload a resume and set it as the primary resume.
-
-    FR2.9 (§8.6): Settings page upload slot.  Stores the file, parses it,
-    and marks it as primary so /resume/check and /jobs/match can resolve it.
-    """
-    from .services import resume_store
-    from .services.resume_parser import parse_resume
-
-    content = await resume_file.read()
-    if not content:
-        raise HTTPException(status_code=400, detail="Uploaded resume is empty")
-
-    # Store the file and get a resume_id
-    resume_id, saved_path = resume_store.store_upload(
-        content, resume_file.filename or "resume",
-    )
-
-    # Parse and persist for downstream matching (/jobs/match needs bullets)
-    try:
-        parsed = parse_resume(str(saved_path))
-        resume_store.save_parsed(resume_id, parsed)
-
-        # §12.1: Extract resume entity graph for token-efficient matching
-        from .core.resume_graph import extract_resume_graph
-        skills_text = "\n".join(parsed.sections.get("skills", []))
-        graph = extract_resume_graph(
-            [{"section": b.section, "text": b.text} for b in parsed.bullets],
-            skills_raw=skills_text,
-        )
-        resume_store.save_graph(resume_id, graph.to_dict())
-    except ValueError as exc:
-        # Parser explicitly rejected the file (e.g. image-based PDF) —
-        # surface the error so the user can try DOCX instead.
-        raise HTTPException(status_code=422, detail=str(exc)) from exc
-    except Exception as exc:
-        logger.warning("Primary resume parse failed: %s (storing raw only)", exc)
-
-    # Set as primary
-    resume_store.set_primary(resume_id)
-
-    info = resume_store.get_primary_info()
-    return ResumePrimaryInfo(**info)
-
-
-# ---------------------------------------------------------------------------
-# Model configuration (§12.5 user-configurable)
-# ---------------------------------------------------------------------------
-
-class ModelConfig(BaseModel):
-    ollama_model: str = Field(default="lfm2.5-thinking", description="Ollama model for all tiers")
-
-
-@app.get("/api/v1/config/model", tags=["config"])
-async def get_model_config() -> ModelConfig:
-    """Return the current model configuration."""
-    return ModelConfig(ollama_model=settings.OLLAMA_MODEL)
-
-
-@app.post("/api/v1/config/model", tags=["config"])
-async def set_model_config(config: ModelConfig) -> dict:
-    """Update the model configuration at runtime.
-
-    The change applies immediately but does not persist across restarts.
-    To persist, set OLLAMA_MODEL in .env.
-    """
-    settings.OLLAMA_MODEL = config.ollama_model
-    logger.info("Model updated to: %s", config.ollama_model)
-    return {"status": "ok", "ollama_model": config.ollama_model}
 
 
 @app.get("/api/v1/jobs/match", response_model=JobMatchResponse, tags=["stage3"])
 async def jobs_match(
-    resume_id: str | None = Query(default=None),
+    resume_id: str,
     limit: int = Query(default=20, ge=1, le=100),
     location_mode: LocationMode = LocationMode.SPECIFIC_CITY,
     cities: str = Query(default="", description="Comma-separated cities"),
     remote_ok: bool = False,
     fresher_only: bool = Query(default=False, description="Filter to fresher/junior roles only (v1.1)"),
-    max_age_days: int = Query(default=30, ge=1, le=365, description="Max age of job postings in days"),
-    min_score: float = Query(default=0.0, ge=0.0, le=1.0, description="Minimum match score (0-1) to include"),
-    sources: str = Query(default="", description="Comma-separated source names to include (empty = all)"),
     test: bool = Query(default=False, description="Return sample data for UI testing"),
 ) -> JobMatchResponse:
-    """Stage 3: rank live postings by fit against a resume.
-
-    FR2.12 (§8.6): ``resume_id`` is optional — when omitted, matches
-    against the user's current primary resume.
-    """
+    """Stage 3: rank live postings by fit against a resume."""
     from datetime import datetime, timezone
     from .models.schemas import (
         AggregateGap, JobMatch as JM, LocationMatch as LM,
@@ -441,7 +327,6 @@ async def jobs_match(
 
     # Mock data for testing the UI when board APIs are unavailable
     if test:
-        from .models.schemas import LocationPreference
         now = datetime.now(timezone.utc)
         mock_matches = [
             JM(job_id="mock-1", title="Senior ML Engineer", company="Acme AI", source="bluedoor",
@@ -461,39 +346,14 @@ async def jobs_match(
                location="Pune, India", match_score=0.64, location_match=LM.RELOCATION_REQUIRED,
                top_gaps=["transformers", "hugging face"], apply_url="https://example.com/jobs/5"),
         ]
-        # Apply filters to mock data so the UI filters actually work
-        filtered = mock_matches
-        if min_score > 0:
-            filtered = [m for m in filtered if m.match_score >= min_score]
-        source_list = [s.strip().lower() for s in sources.split(",") if s.strip()] if sources else []
-        if source_list:
-            filtered = [m for m in filtered if m.source.lower() in source_list]
-        location_pref = LocationPreference(
-            mode=location_mode,
-            cities=[c.strip() for c in cities.split(",") if c.strip()],
-            remote_ok=remote_ok,
-        )
-        from .services.job_matcher import _apply_location_preference
-        filtered = _apply_location_preference(filtered, location_pref)
         return JobMatchResponse(
-            matches=filtered[:limit],
+            matches=mock_matches[:limit],
             aggregate_gaps=[
                 AggregateGap(skill="kubernetes", missing_in_pct=0.6),
                 AggregateGap(skill="pytorch lightning", missing_in_pct=0.4),
                 AggregateGap(skill="terraform", missing_in_pct=0.2),
             ],
         )
-
-    # FR2.12: resolve primary resume if resume_id is not provided
-    if not resume_id:
-        from .services import resume_store
-        resume_id = resume_store.get_primary_id()
-        if not resume_id:
-            raise HTTPException(
-                status_code=400,
-                detail="No resume_id provided and no primary resume set. "
-                       "Upload a resume in Settings or provide a resume_id.",
-            )
 
     from .services.job_matcher import match_jobs
     from .models.schemas import LocationPreference
@@ -503,22 +363,10 @@ async def jobs_match(
         cities=[c.strip() for c in cities.split(",") if c.strip()],
         remote_ok=remote_ok,
     )
-    source_list = [s.strip() for s in sources.split(",") if s.strip()] if sources else []
     try:
-        import asyncio
-        return await asyncio.wait_for(
-            match_jobs(
-                resume_id, location_pref, limit,
-                fresher_only=fresher_only,
-                max_age_days=max_age_days,
-                min_score=min_score,
-                sources=source_list,
-            ),
-            timeout=300,
-        )
-    except asyncio.TimeoutError:
-        raise HTTPException(status_code=504, detail="Job matching timed out (300s limit). Try reducing the number of sources.")
+        return await match_jobs(resume_id, location_pref, limit, fresher_only=fresher_only)
     except ValueError as exc:
+        from fastapi import HTTPException
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
@@ -527,16 +375,29 @@ async def jobs_match(
 # ---------------------------------------------------------------------------
 
 @app.post("/api/v1/jobs/refresh", tags=["stage3"])
-async def jobs_refresh():
+async def jobs_refresh(background: bool = Query(default=False, description="Run asynchronously via the Redis job queue")):
     """Re-fetch postings from all boards and store in ChromaDB job_postings.
 
-    Intended to be called periodically (e.g. via a cron job or background
-    task queue). Stores postings in ChromaDB so future /jobs/match calls
-    can read from the local store instead of hitting external APIs.
+    Two modes:
+    - ``background=false`` (default): runs synchronously, returning the
+      refreshed counts in the response body.
+    - ``background=true``: enqueues a job on the Redis-backed queue and
+      returns immediately with ``job_id`` / ``status="queued"``. Track
+      progress via ``GET /api/v1/jobs/refresh/status/{job_id}``.
     """
+    from .services.jobs_queue import enqueue_refresh
+
+    if redis_client is None:
+        from fastapi import HTTPException
+        raise HTTPException(status_code=503, detail="Redis unavailable")
+
+    if background:
+        job_id = await enqueue_refresh(redis_client)
+        return {"job_id": job_id, "status": "queued"}
+
+    # Synchronous path — ran by a client that wants the result inline
     from .services.job_matcher import _discover_postings, _dedupe_postings, _normalise_postings, _drop_stale
     from .config import settings
-    from datetime import datetime, timezone
 
     postings = await _discover_postings()
     postings = _dedupe_postings(postings)
@@ -572,6 +433,22 @@ async def jobs_refresh():
             for s in set(p.source for p in postings)
         } if postings else {},
     }
+
+
+@app.get("/api/v1/jobs/refresh/status/{job_id}", tags=["stage3"])
+async def jobs_refresh_status(job_id: str) -> dict:
+    """Poll the status of a background refresh job (see /jobs/refresh)."""
+    from .services.jobs_queue import get_job_status
+
+    if redis_client is None:
+        from fastapi import HTTPException
+        raise HTTPException(status_code=503, detail="Redis unavailable")
+
+    status = await get_job_status(redis_client, job_id)
+    if status is None:
+        from fastapi import HTTPException
+        raise HTTPException(status_code=404, detail=f"Unknown job_id: {job_id}")
+    return status
 
 
 # ---------------------------------------------------------------------------

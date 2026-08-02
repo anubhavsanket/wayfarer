@@ -71,24 +71,37 @@ def tmp_resume_with_table(tmp_path):
 
 @pytest.fixture
 def tmp_resume_simple(tmp_path):
-    """A simple flat resume without tables — parser should NOT flag structural loss.
-
-    Uses standard section order (Experience → Education → Skills) and complete
-    contact info (email/phone/LinkedIn) so every structural check passes.
-    """
+    """A simple flat resume without tables — parser should NOT flag structural loss."""
     doc = Document()
     doc.add_paragraph("Anubhav Sharma")
-    doc.add_paragraph("anubhav@example.com | +91-9999999999 | linkedin.com/in/anubhav")
+    doc.add_paragraph("anubhav@example.com")
+    doc.add_paragraph("Skills")
+    doc.add_paragraph("Python, FastAPI, ChromaDB")
     doc.add_paragraph("Experience")
     doc.add_paragraph("Built RAG systems with ChromaDB and FastAPI")
     doc.add_paragraph("Education")
     doc.add_paragraph("B.Tech CS, IIT Delhi")
-    doc.add_paragraph("Skills")
-    doc.add_paragraph("Python, FastAPI, ChromaDB")
 
     path = tmp_path / "simple_resume.docx"
     doc.save(str(path))
     return path
+
+
+@pytest.fixture
+def stored_resume(tmp_resume_simple):
+    """A resume persisted via the Settings flow (store_upload + save_parsed).
+
+    Mirrors what happens when a user uploads their main resume in the
+    Settings tab: an original file + parsed.json live under
+    ``data/uploads/{resume_id}/``.
+    """
+    from backend.app.services.resume_store import store_upload, save_parsed
+    from backend.app.services.resume_parser import parse_resume
+
+    parsed = parse_resume(str(tmp_resume_simple))
+    resume_id, _ = store_upload(tmp_resume_simple.read_bytes(), tmp_resume_simple.name)
+    save_parsed(resume_id, parsed)
+    return resume_id
 
 
 # ---------------------------------------------------------------------------
@@ -133,54 +146,6 @@ def test_parser_rejects_unsupported_format(tmp_path):
         parse_resume(f)
 
 
-@pytest.mark.parametrize("ext", ["docx", "md"])
-def test_structural_checks_fire_on_every_parse_path(tmp_path, ext):
-    """Regression: section/contact/length checks must run on ALL parse paths.
-
-    Previously they were only wired into the legacy fallback parser, so with
-    AnyDoc installed (the primary parser for DOCX/PDF) a resume that was
-    missing sections and contact info returned zero structural issues — the
-    severity-weighted ATS penalty silently never fired. This test feeds a
-    deficient resume through parse_resume end-to-end (both the AnyDoc and
-    markdown paths) and asserts the expected issues are produced.
-    """
-    from backend.app.services.resume_parser import parse_resume
-    from backend.app.models.schemas import StructuralIssueType
-
-    lines = [
-        "Anubhav Sharma",
-        "Summary",
-        "GenAI engineer with RAG experience.",
-        "Experience",
-        "Built ChromaDB-backed RAG systems.",
-    ]
-    if ext == "md":
-        path = tmp_path / "deficient.md"
-        path.write_text("\n".join(lines))
-    else:
-        doc = Document()
-        for line in lines:
-            doc.add_paragraph(line)
-        path = tmp_path / "deficient.docx"
-        doc.save(str(path))
-
-    parsed = parse_resume(str(path))
-
-    missing = [i for i in parsed.structural_issues
-               if i.type == StructuralIssueType.MISSING_SECTION]
-    contact = [i for i in parsed.structural_issues
-               if i.type == StructuralIssueType.CONTACT_INCOMPLETE]
-
-    # Education (high) + Skills (medium) missing → 2 issues
-    assert {i.severity for i in missing} == {"high", "medium"}
-    # No email (high) / phone (medium) / LinkedIn (low) → 3 issues
-    assert {i.severity for i in contact} == {"high", "medium", "low"}
-    # Exactly these 5 — no section-order or length noise for this resume
-    assert len(parsed.structural_issues) == 5
-    # Every issue must carry an actionable suggestion (plan requirement)
-    assert all(i.suggestion for i in parsed.structural_issues)
-
-
 # ---------------------------------------------------------------------------
 # ATS score (PRD §8.5 acceptance criterion #4)
 # ---------------------------------------------------------------------------
@@ -190,7 +155,7 @@ def test_ats_score_changes_with_structural_fix():
     from backend.app.models.schemas import KeywordGap, ConfidenceTier, StructuralIssue
     from backend.app.services.resume_parser import ParsedResume
 
-    # Baseline: no structural issues, all keywords covered (enough for full range)
+    # Baseline: no structural issues, all keywords covered
     parsed = ParsedResume(
         sections={"skills": [], "experience": []},
         bullets=[],
@@ -199,8 +164,6 @@ def test_ats_score_changes_with_structural_fix():
     )
     gaps = [
         KeywordGap(keyword="python", tier=ConfidenceTier.VERIFIED, confidence=1.0, rationale=""),
-        KeywordGap(keyword="aws", tier=ConfidenceTier.VERIFIED, confidence=1.0, rationale=""),
-        KeywordGap(keyword="docker", tier=ConfidenceTier.VERIFIED, confidence=1.0, rationale=""),
     ]
     perfect_score = _compute_ats_score(parsed, gaps)
     assert perfect_score == 1.0
@@ -211,17 +174,6 @@ def test_ats_score_changes_with_structural_fix():
     assert degraded_score < perfect_score
     assert degraded_score >= 0.0
 
-    # Severity weighting: high issues penalize more than medium
-    parsed.structural_issues = [
-        StructuralIssue(location="x", issue="y", severity="high"),
-        StructuralIssue(location="x", issue="y", severity="medium"),
-        StructuralIssue(location="x", issue="y", severity="low"),
-    ]
-    weighted_score = _compute_ats_score(parsed, gaps)
-    # high=0.20, medium=0.10, low=0.05 → total penalty = 0.35
-    expected = round(0.4 * (1.0 - 0.35) + 0.6 * 1.0, 3)
-    assert weighted_score == expected
-
 
 def test_ats_score_drops_with_more_gaps():
     from backend.app.services.ats_checker import _compute_ats_score
@@ -231,21 +183,16 @@ def test_ats_score_drops_with_more_gaps():
     parsed = ParsedResume(
         sections={}, bullets=[], ats_visible_text="", structural_issues=[],
     )
-    # Use enough keywords (5+) so the minimum threshold doesn't cap the score
     base = [
         KeywordGap(keyword="python", tier=ConfidenceTier.VERIFIED, confidence=1.0, rationale=""),
         KeywordGap(keyword="aws", tier=ConfidenceTier.VERIFIED, confidence=1.0, rationale=""),
-        KeywordGap(keyword="docker", tier=ConfidenceTier.VERIFIED, confidence=1.0, rationale=""),
-        KeywordGap(keyword="sql", tier=ConfidenceTier.VERIFIED, confidence=1.0, rationale=""),
-        KeywordGap(keyword="react", tier=ConfidenceTier.VERIFIED, confidence=1.0, rationale=""),
     ]
     base_score = _compute_ats_score(parsed, base)
 
-    # Add 3 gaps (now 5 matched + 3 gaps = 8 keywords, well above threshold)
+    # Add 2 gaps
     base.extend([
         KeywordGap(keyword="k8s", tier=ConfidenceTier.GAP, confidence=None, rationale=""),
         KeywordGap(keyword="rust", tier=ConfidenceTier.GAP, confidence=None, rationale=""),
-        KeywordGap(keyword="go", tier=ConfidenceTier.GAP, confidence=None, rationale=""),
     ])
     new_score = _compute_ats_score(parsed, base)
     assert new_score < base_score
@@ -355,133 +302,86 @@ def test_resume_check_with_docx(client, tmp_resume_simple):
 
 
 # ---------------------------------------------------------------------------
-# Primary resume management (§8.6)
+# Resume check — "Use Stored Resume" path (resume_id instead of upload)
 # ---------------------------------------------------------------------------
 
-def test_resume_check_without_file_no_primary_returns_400(client):
-    """FR2.10: no file + no primary → 400."""
+def test_resume_check_with_stored_resume_id(client, stored_resume):
+    """Check using only resume_id — no file upload — returns the same id."""
+    resp = client.post(
+        "/api/v1/resume/check",
+        data={"resume_id": stored_resume, "jd_text": "Python developer with FastAPI"},
+    )
+    assert resp.status_code == 200, resp.text
+    data = resp.json()
+    assert data["resume_id"] == stored_resume
+    assert "ats_score" in data
+    assert "keyword_gaps" in data
+    # The parsed resume must be re-persisted so /resume/save can follow up
+    from backend.app.services.resume_store import load_parsed
+    assert load_parsed(stored_resume) is not None
+
+
+def test_resume_check_accepts_either_file_or_id(client):
+    """Neither resume_file nor resume_id → 400."""
     resp = client.post(
         "/api/v1/resume/check",
         data={"jd_text": "Python developer"},
     )
     assert resp.status_code == 400
-    assert "no primary" in resp.json()["detail"].lower() or "no resume" in resp.json()["detail"].lower()
 
 
-def test_resume_check_without_file_uses_primary(client, tmp_resume_simple):
-    """FR2.10: no file + primary set → checks the primary resume."""
-    from backend.app.services.resume_store import store_upload, save_parsed, set_primary, original_file_path
-    from backend.app.services.resume_parser import parse_resume
-
-    # Upload and set primary
-    content = tmp_resume_simple.read_bytes()
-    resume_id, saved_path = store_upload(content, tmp_resume_simple.name)
-    parsed = parse_resume(str(saved_path))
-    save_parsed(resume_id, parsed)
-    set_primary(resume_id)
-
-    # Check without uploading a file
+def test_resume_check_unknown_stored_id_returns_404(client):
+    """An unknown resume_id → 404, not a generic failure."""
     resp = client.post(
         "/api/v1/resume/check",
-        data={"jd_text": "Python developer with FastAPI experience"},
+        data={"resume_id": "does-not-exist", "jd_text": "Python developer"},
     )
+    assert resp.status_code == 404
+
+
+def test_resume_check_file_takes_precedence_over_id(client, tmp_resume_simple, stored_resume):
+    """When both resume_file and resume_id are sent, the file wins.
+
+    This mirrors the Resume Check page's "Replace" flow: a freshly picked
+    file replaces the stored resume for this check and produces a new id.
+    """
+    with open(tmp_resume_simple, "rb") as f:
+        resp = client.post(
+            "/api/v1/resume/check",
+            files={"resume_file": ("resume.docx", f.read(), "application/vnd.openxmlformats-officedocument.wordprocessingml.document")},
+            data={"resume_id": stored_resume, "jd_text": "Python"},
+        )
     assert resp.status_code == 200, resp.text
     data = resp.json()
-    assert data["resume_id"] == resume_id
-    assert "ats_score" in data
+    # The file path mints a brand-new resume id
+    assert data["resume_id"] != stored_resume
 
 
-def test_one_off_check_does_not_change_primary(client, tmp_resume_simple):
-    """FR2.10: variant check never changes primary."""
-    from backend.app.services.resume_store import store_upload, save_parsed, set_primary, get_primary_id
-    from backend.app.services.resume_parser import parse_resume
-
-    # Set up a primary
-    content = tmp_resume_simple.read_bytes()
-    primary_id, _ = store_upload(content, "primary.docx")
-    parsed = parse_resume(str(tmp_resume_simple))
-    save_parsed(primary_id, parsed)
-    set_primary(primary_id)
-
-    # Run a one-off variant check with a different file
+def test_stored_resume_can_be_saved_after_check(client, stored_resume):
+    """Full stored-resume workflow: check by id then save accepted suggestions."""
+    # Step 1 — check using the stored resume
     resp = client.post(
         "/api/v1/resume/check",
-        files={"resume_file": ("variant.docx", content, "application/vnd.openxmlformats-officedocument.wordprocessingml.document")},
-        data={"jd_text": "Python developer"},
+        data={"resume_id": stored_resume, "jd_text": "Python FastAPI"},
     )
-    assert resp.status_code == 200
-    variant_id = resp.json()["resume_id"]
+    assert resp.status_code == 200, resp.text
+    resume_id = resp.json()["resume_id"]
 
-    # Primary should NOT have changed
-    assert get_primary_id() == primary_id
-    assert variant_id != primary_id
-
-
-def test_resume_save_set_as_primary(client, tmp_resume_simple):
-    """FR2.11: set_as_primary mode saves and promotes."""
-    from backend.app.services.resume_store import store_upload, save_parsed, get_primary_id
-    from backend.app.services.resume_parser import parse_resume
-
-    content = tmp_resume_simple.read_bytes()
-    resume_id, _ = store_upload(content, tmp_resume_simple.name)
-    parsed = parse_resume(str(tmp_resume_simple))
-    save_parsed(resume_id, parsed)
-
-    # Save with set_as_primary mode
+    # Step 2 — save accepted suggestions against that id
     resp = client.post(
         "/api/v1/resume/save",
         json={
             "resume_id": resume_id,
-            "accepted_suggestions": [],
-            "mode": "set_as_primary",
+            "accepted_suggestions": [
+                {"bullet_id": "b1", "suggested_text": "Built RAG systems with ChromaDB and FastAPI and LangChain",
+                 "original_text": "Built RAG systems with ChromaDB and FastAPI"},
+            ],
+            "mode": "new_file",
+            "confirm_overwrite": False,
         },
     )
     assert resp.status_code == 200, resp.text
-    assert resp.json()["mode_applied"] == "set_as_primary"
-
-    # Verify primary was set
-    assert get_primary_id() == resume_id
-
-
-def test_get_primary_resume(client, tmp_resume_simple):
-    """GET /resume/primary returns current primary info."""
-    from backend.app.services.resume_store import store_upload, save_parsed, set_primary
-    from backend.app.services.resume_parser import parse_resume
-
-    content = tmp_resume_simple.read_bytes()
-    resume_id, _ = store_upload(content, tmp_resume_simple.name)
-    parsed = parse_resume(str(tmp_resume_simple))
-    save_parsed(resume_id, parsed)
-    set_primary(resume_id)
-
-    resp = client.get("/api/v1/resume/primary")
-    assert resp.status_code == 200
     data = resp.json()
-    assert data["resume_id"] == resume_id
-    assert data["filename"] == tmp_resume_simple.name
-    assert "uploaded_at" in data
-
-
-def test_get_primary_resume_404_when_none(client):
-    """GET /resume/primary returns 404 when no primary is set."""
-    resp = client.get("/api/v1/resume/primary")
-    assert resp.status_code == 404
-
-
-def test_set_primary_resume(client, tmp_resume_simple):
-    """POST /resume/primary uploads and sets primary."""
-    with open(tmp_resume_simple, "rb") as f:
-        resp = client.post(
-            "/api/v1/resume/primary",
-            files={"resume_file": ("resume.docx", f.read(), "application/vnd.openxmlformats-officedocument.wordprocessingml.document")},
-        )
-    assert resp.status_code == 200, resp.text
-    data = resp.json()
-    assert data["resume_id"]
-    assert data["filename"] == "resume.docx"
-    assert "uploaded_at" in data
-
-    # Verify it's now the primary
-    resp2 = client.get("/api/v1/resume/primary")
-    assert resp2.status_code == 200
-    assert resp2.json()["resume_id"] == data["resume_id"]
+    assert data["mode_applied"] == "new_file"
+    assert Path(data["file_ref"]).exists()
+    assert data.get("changes", {}).get("total_changes", 0) >= 1

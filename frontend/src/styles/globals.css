@@ -4,82 +4,48 @@
 
 @layer base {
   :root {
-    /* Warm beige page, cream cards, ink text/borders, blue primary, cyan highlight */
-    --background: 33 100% 88%;
-    --foreground: 24 10% 10%;
-    --card: 40 100% 97%;
-    --card-foreground: 24 10% 10%;
-    --popover: 40 100% 97%;
-    --popover-foreground: 24 10% 10%;
-    --primary: 227 82% 49%;
-    --primary-foreground: 0 0% 100%;
-    --secondary: 33 100% 75%;
-    --secondary-foreground: 24 10% 10%;
-    --muted: 33 100% 75%;
-    --muted-foreground: 33 5% 32%;
-    --accent: 197 100% 94%;
-    --accent-foreground: 24 10% 10%;
-    --destructive: 347 77% 50%;
-    --destructive-foreground: 0 0% 100%;
-    --border: 24 10% 10%;
-    --input: 24 10% 10%;
-    --ring: 196 90% 61%;
+    --background: 0 0% 100%;
+    --foreground: 222.2 84% 4.9%;
+    --card: 0 0% 100%;
+    --card-foreground: 222.2 84% 4.9%;
+    --popover: 0 0% 100%;
+    --popover-foreground: 222.2 84% 4.9%;
+    --primary: 221.2 83.2% 53.3%;
+    --primary-foreground: 210 40% 98%;
+    --secondary: 210 40% 96.1%;
+    --secondary-foreground: 222.2 47.4% 11.2%;
+    --muted: 210 40% 96.1%;
+    --muted-foreground: 215.4 16.3% 46.9%;
+    --accent: 210 40% 96.1%;
+    --accent-foreground: 222.2 47.4% 11.2%;
+    --destructive: 0 84.2% 60.2%;
+    --destructive-foreground: 210 40% 98%;
+    --border: 214.3 31.8% 91.4%;
+    --input: 214.3 31.8% 91.4%;
+    --ring: 221.2 83.2% 53.3%;
     --radius: 0.5rem;
-
-    /* Neo-brutalist raw palette (light) */
-    --beige: #ffe4c4;
-    --beige-deep: #f3c48b;
-    --cream: #fffaf0;
-    --ink: #1c1917;
-    --ink-soft: #57534e;
-    --blue: #1743e3;
-    --blue-deep: #1029a8;
-    --blue-pale: #e7ecff;
-    --cyan: #44c7f5;
-    --cyan-pale: #e0f6ff;
-    --shadow-ink: #1c1917;
-    --texture-dot: #c49464;
   }
 
   .dark {
-    /* GitHub-inspired — deep charcoal bg, sky blue buttons, deep blue accent, subtle borders */
-    --background: 216 28% 7%;
-    --foreground: 0 0% 100%;
-    --card: 215 22% 23%;
-    --card-foreground: 0 0% 100%;
-    --popover: 215 22% 23%;
-    --popover-foreground: 0 0% 100%;
-    --primary: 227 82% 49%;
-    --primary-foreground: 0 0% 5%;
-    --secondary: 227 82% 49%;
-    --secondary-foreground: 0 0% 100%;
-    --muted: 215 15% 15%;
-    --muted-foreground: 215 20% 65%;
-    --accent: 215 15% 15%;
-    --accent-foreground: 0 0% 100%;
-    --destructive: 0 91% 71%;
-    --destructive-foreground: 0 0% 100%;
-    --border: 0 0% 0%;
-    --input: 0 0% 0%;
-    --ring: 196 90% 61%;
-
-    /* Neo-brutalist raw palette (GitHub) */
-    --beige: #0d1117;
-    --beige-deep: #21262d;
-    --cream: #2e3948;
-    --ink: #000000;
-    --ink-soft: #94a3b8;
-    --blue: #1743e3;
-    --blue-deep: #44c7f5;
-    --blue-pale: #0d2d44;
-    --cyan: #44c7f5;
-    --cyan-pale: #0c1e4a;
-    --shadow-ink: rgba(68, 199, 245, 0.12);
-    --texture-dot: rgba(68, 199, 245, 0.04);
-  }
-
-  .dark ::placeholder {
-    color: #8b949e;
+    --background: 222.2 84% 4.9%;
+    --foreground: 210 40% 98%;
+    --card: 222.2 84% 4.9%;
+    --card-foreground: 210 40% 98%;
+    --popover: 222.2 84% 4.9%;
+    --popover-foreground: 210 40% 98%;
+    --primary: 217.2 91.2% 59.8%;
+    --primary-foreground: 222.2 47.4% 11.2%;
+    --secondary: 217.2 32.6% 17.5%;
+    --secondary-foreground: 210 40% 98%;
+    --muted: 217.2 32.6% 17.5%;
+    --muted-foreground: 215 20.2% 65.1%;
+    --accent: 217.2 32.6% 17.5%;
+    --accent-foreground: 210 40% 98%;
+    --destructive: 0 62.8% 30.6%;
+    --destructive-foreground: 210 40% 98%;
+    --border: 217.2 32.6% 17.5%;
+    --input: 217.2 32.6% 17.5%;
+    --ring: 224.3 76.3% 48%;
   }
 }
 
@@ -87,75 +53,7 @@
   * {
     @apply border-border;
   }
-
   body {
-    @apply bg-background font-sans text-foreground;
-    background-image: radial-gradient(
-      circle,
-      var(--texture-dot) 2px,
-      transparent 2px
-    );
-    background-size: 20px 20px;
-  }
-
-  ::selection {
-    background: var(--cyan);
-    color: var(--ink);
-  }
-
-  ::-webkit-scrollbar {
-    width: 10px;
-    height: 10px;
-  }
-  ::-webkit-scrollbar-track {
-    background: transparent;
-  }
-  ::-webkit-scrollbar-thumb {
-    background: var(--ink);
-    border: 2px solid transparent;
-    border-radius: 999px;
-    background-clip: padding-box;
-  }
-  ::-webkit-scrollbar-thumb:hover {
-    background: var(--cyan);
-    border: 2px solid transparent;
-    background-clip: padding-box;
-  }
-}
-
-@layer components {
-  /* Decorative sticker badge — rotated, thick border, hard shadow, mono */
-  .sticker {
-    display: inline-flex;
-    align-items: center;
-    gap: 0.375rem;
-    border: 2px solid var(--ink);
-    border-radius: calc(var(--radius) - 2px);
-    box-shadow: 3px 3px 0 0 var(--shadow-ink);
-    font-family: "Azeret Mono", ui-monospace, monospace;
-    font-size: 0.6875rem;
-    line-height: 1;
-    font-weight: 600;
-    letter-spacing: 0.02em;
-    text-transform: uppercase;
-    padding: 0.3125rem 0.5rem;
-    white-space: nowrap;
-  }
-
-  /* Card entrance helper: hidden until anime.js reveals it */
-  .reveal-hidden {
-    opacity: 0;
-  }
-}
-
-@layer base {
-  @media (prefers-reduced-motion: reduce) {
-    *,
-    *::before,
-    *::after {
-      animation-duration: 0.01ms !important;
-      animation-iteration-count: 1 !important;
-      transition-duration: 0.01ms !important;
-    }
+    @apply bg-background text-foreground;
   }
 }

@@ -12,6 +12,8 @@ from dataclasses import dataclass
 
 import httpx
 
+from ..context import get_request_overrides
+
 logger = logging.getLogger(__name__)
 
 
@@ -31,13 +33,12 @@ class TavilyClient:
     BASE_URL = "https://api.tavily.com/search"
 
     def __init__(self, api_key: str | None = None) -> None:
-        if api_key:
-            self.api_key = api_key
-        else:
-            # Check per-request override from Settings UI headers
-            from ..main import get_overrides
-            ov = get_overrides()
-            self.api_key = ov.tavily_api_key or os.environ.get("TAVILY_API_KEY")
+        overrides = get_request_overrides()
+        self.api_key = (
+            api_key
+            or (overrides.tavily_api_key if overrides and overrides.tavily_api_key else None)
+            or os.environ.get("TAVILY_API_KEY")
+        )
 
     def available(self) -> bool:
         return bool(self.api_key)
@@ -72,12 +73,12 @@ class BraveClient:
     BASE_URL = "https://api.search.brave.com/res/v1/web/search"
 
     def __init__(self, api_key: str | None = None) -> None:
-        if api_key:
-            self.api_key = api_key
-        else:
-            from ..main import get_overrides
-            ov = get_overrides()
-            self.api_key = ov.brave_api_key or os.environ.get("BRAVE_API_KEY")
+        overrides = get_request_overrides()
+        self.api_key = (
+            api_key
+            or (overrides.brave_api_key if overrides and overrides.brave_api_key else None)
+            or os.environ.get("BRAVE_API_KEY")
+        )
 
     def available(self) -> bool:
         return bool(self.api_key)

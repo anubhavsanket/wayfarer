@@ -17,7 +17,6 @@ from __future__ import annotations
 
 import logging
 import re
-from pathlib import Path
 from typing import Any
 
 from ..llm_router import router, extract_json
@@ -36,24 +35,15 @@ logger = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 
 async def _extract_jd_keywords(jd_text: str) -> list[str]:
-    """Extract skills/tools/certifications keywords from a JD via the LLM router.
-
-    §12.6: Strips boilerplate (EEO, benefits, about-us) before extraction.
-    """
-    from .legitimacy import _strip_boilerplate
-    jd_text = _strip_boilerplate(jd_text)
-
+    """Extract skills/tools/certifications keywords from a JD via the LLM router."""
     prompt = (
-        "Extract the key keywords from this job description that a candidate "
-        "must demonstrate to be qualified. Include:\n"
-        "- Technical skills and tools (Python, SQL, Excel, AWS, etc.)\n"
-        "- Domain knowledge (logistics, finance, data analysis, etc.)\n"
-        "- Required qualifications (degrees, certifications, years of experience)\n"
-        "- Key responsibilities as short phrases (e.g. 'process automation', 'stakeholder communication')\n\n"
+        "Extract the key technical and professional keywords (skills, tools, "
+        "languages, frameworks, certifications) a candidate must demonstrate "
+        "for this job description.\n"
         "Rules:\n"
         "- Return ONLY a JSON list of strings, no commentary.\n"
-        "- Be generous — extract at least 8-15 keywords even for non-technical roles.\n"
-        "- Each keyword should be a concrete, checkable skill or qualification.\n"
+        "- Include concrete skills/tools (e.g. 'Python', 'PyTorch', 'AWS').\n"
+        "- Include soft-skill phrases only if stated explicitly.\n"
         "- Max 25 keywords.\n\n"
         f"JOB DESCRIPTION:\n{jd_text[:6000]}"
     )
@@ -129,18 +119,9 @@ def _compute_ats_score(
     Structural parseability: starts at 1.0, penalised per structural issue.
     Keyword coverage: fraction of JD keywords present in ATS-visible text.
     Weights per PRD: structural 40%, keyword coverage 60%.
-
-    A minimum of 3 keywords is required for a meaningful score. If fewer
-    keywords are extracted (e.g. the JD is very short or non-technical),
-    the score is capped to avoid misleading 100% results on 1 keyword.
     """
-    # Structural component — severity-weighted penalty per issue
-    severity_weights = {"high": 0.20, "medium": 0.10, "low": 0.05}
-    structural_penalty = sum(
-        severity_weights.get(getattr(i, "severity", "medium"), 0.10)
-        for i in parsed.structural_issues
-    )
-    structural_score = max(0.0, 1.0 - structural_penalty)
+    # Structural component — each unresolved structural issue costs 0.15
+    structural_score = max(0.0, 1.0 - 0.15 * len(parsed.structural_issues))
 
     # Keyword coverage on ATS-visible text only
     if keyword_gaps:
@@ -150,24 +131,9 @@ def _compute_ats_score(
         )
         keyword_score = covered / len(keyword_gaps)
     else:
-        # No keywords extracted = can't assess coverage, not a perfect match
-        keyword_score = 0.0
+        keyword_score = 1.0
 
-    raw_score = 0.4 * structural_score + 0.6 * keyword_score
-
-    # Cap score when too few keywords — a 100% match on 1 keyword is misleading.
-    # Scale: 1 keyword → max 30%, 2 keywords → max 50%, 3+ keywords → full range.
-    num_keywords = len(keyword_gaps)
-    if num_keywords == 0:
-        max_score = 0.0
-    elif num_keywords == 1:
-        max_score = 0.30
-    elif num_keywords == 2:
-        max_score = 0.50
-    else:
-        max_score = 1.0
-
-    return round(min(raw_score, max_score), 3)
+    return round(0.4 * structural_score + 0.6 * keyword_score, 3)
 
 
 # ---------------------------------------------------------------------------
@@ -181,44 +147,16 @@ async def check_resume(
 ) -> ResumeCheckResponse:
     """Run the full Stage 2 ATS check for a resume file against a JD.
 
-    §12.4: Results are cached by hash(resume_content + jd_text) so
-    re-running the same check is instant.
-
     If ``resume_id`` is provided, the parsed resume is persisted via
     :mod:`resume_store` so ``/resume/save`` can apply accepted suggestions.
     """
-    # §12.4: Check cache first
-    from ..utils.cache import resume_cache, _CACHE_VERSION
-    resume_bytes = Path(resume_path).read_bytes()
-    cache_key = resume_cache.make_key(_CACHE_VERSION.encode(), resume_bytes, jd_text.encode())
-    cached = resume_cache.get(cache_key)
-    if cached is not None:
-        logger.info("Cache hit for resume check (key=%s...)", cache_key[:12])
-        gaps = [KeywordGap(**g) for g in cached["keyword_gaps"]]
-        structural = [StructuralIssue(**s) for s in cached.get("structural_issues", [])]
-        return ResumeCheckResponse(
-            resume_id=cached.get("resume_id", resume_id),
-            ats_score=cached["ats_score"],
-            structural_issues=structural,
-            keyword_gaps=gaps,
-        )
-
     # 1. Parse resume (structured + ATS-visible text + structural issues)
     parsed = parse_resume(resume_path)
 
     # Persist the parsed resume for later save (if we have an id)
     if resume_id:
-        from .resume_store import save_parsed, save_graph
+        from .resume_store import save_parsed
         save_parsed(resume_id, parsed)
-
-        # §12.1: Extract resume entity graph for token-efficient matching
-        from ..core.resume_graph import extract_resume_graph
-        skills_text = "\n".join(parsed.sections.get("skills", []))
-        graph = extract_resume_graph(
-            [{"section": b.section, "text": b.text} for b in parsed.bullets],
-            skills_raw=skills_text,
-        )
-        save_graph(resume_id, graph.to_dict())
 
     # 2. Extract JD keywords
     keywords = await _extract_jd_keywords(jd_text)
@@ -285,15 +223,6 @@ async def check_resume(
 
     # 4. Compute ATS score
     ats_score = _compute_ats_score(parsed, keyword_gaps)
-
-    # §12.4: Cache the result
-    cache_key = resume_cache.make_key(_CACHE_VERSION.encode(), resume_bytes, jd_text.encode())
-    resume_cache.set(cache_key, {
-        "resume_id": resume_id,
-        "ats_score": ats_score,
-        "structural_issues": [s.model_dump() for s in parsed.structural_issues],
-        "keyword_gaps": [g.model_dump() for g in keyword_gaps],
-    })
 
     return ResumeCheckResponse(
         resume_id=resume_id,

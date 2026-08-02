@@ -29,13 +29,13 @@ import json
 import logging
 import time
 from collections import deque
-from contextvars import ContextVar
 from dataclasses import dataclass, field
 from typing import Any
 
 import httpx
 
 from .config import settings
+from .context import get_request_overrides
 
 logger = logging.getLogger(__name__)
 
@@ -125,58 +125,47 @@ class LLMRouter:
     ) -> dict[str, Any]:
         """Send a chat request, failing over across providers.
 
+        ``model`` optionally overrides the per-tier model selection, letting
+        callers target a specific model (e.g. a small local classifer like
+        qwen3:0.6b). Credential/availability gating still applies — a provider
+        without its API key is skipped even when ``model`` is explicit.
+
         Returns {"content": str, "provider": str, "model": str, "cached": bool}.
         Raises RuntimeError if every provider is exhausted.
-
-        If ``model`` is provided, it overrides the tier-based model selection.
         """
-        from .main import get_overrides
-        ov = get_overrides()
+        # Determine candidates: header override -> explicit provider -> configured default
+        overrides = get_request_overrides()
+        primary_provider = provider or (overrides.llm_provider if overrides and overrides.llm_provider else settings.LLM_PROVIDER)
+        if primary_provider not in self.PROVIDER_ORDER:
+            primary_provider = settings.LLM_PROVIDER
 
-        # Per-request provider override from Settings UI
-        if not provider and ov.llm_provider:
-            provider = ov.llm_provider
-
-        # If a specific provider is requested, try it first then fall back to all
         if provider:
-            candidates = (provider,) + tuple(p for p in self.providers if p != provider)
+            candidates = (provider,)
         else:
-            candidates = self.providers
+            fallbacks = [p for p in self.PROVIDER_ORDER if p != primary_provider]
+            candidates = (primary_provider, *fallbacks)
+
         last_error: Exception | None = None
 
         for prov in candidates:
-            resolved_model = model or self._model_for(prov, tier)
+            resolved_model = self._model_for(prov, tier, model)
             if not self._provider_available(prov, resolved_model):
-                logger.warning("Router: provider %s skipped (model=%s available=%s)",
-                               prov, resolved_model, self._provider_available(prov, resolved_model))
+                logger.debug("Provider %s skipped (no API key / model)", prov)
                 continue
 
             # Wait for a rate-limit slot before hitting the provider
             if not await self._acquire_slot(prov):
-                logger.warning("Router: provider %s rate-limited locally, skipping", prov)
+                logger.warning("Provider %s rate-limited locally, skipping", prov)
                 continue
 
-            logger.info("Router: calling provider=%s model=%s", prov, resolved_model)
             try:
-                # §12.3: Activate prompt caching if enabled globally
-                effective_cache = cache_control or settings.ENABLE_PROMPT_CACHING
-                logger.debug(f"Router: trying provider={prov} model={resolved_model}")
-                result = await self._call_provider(
+                return await self._call_provider(
                     prov, resolved_model, messages,
                     max_tokens=max_tokens,
                     temperature=temperature,
-                    cache_control=effective_cache,
+                    cache_control=cache_control,
                     json_mode=json_mode,
                 )
-                # Validate result has non-empty content
-                if not result.get("content", "").strip():
-                    logger.warning(
-                        "Provider %s returned empty content — trying next",
-                        prov,
-                    )
-                    last_error = RuntimeError(f"{prov} returned empty content")
-                    continue
-                return result
             except (httpx.HTTPStatusError, httpx.TimeoutException, httpx.TransportError) as exc:
                 last_error = exc
                 status = getattr(exc, "response", None)
@@ -200,60 +189,63 @@ class LLMRouter:
         )
 
     async def embed(self, text: str) -> list[float]:
-        """Embed text locally via Ollama (nomic-embed-text) with retry."""
-        from .main import get_overrides
-        ov = get_overrides()
-        endpoint = ov.ollama_endpoint or settings.OLLAMA_ENDPOINT
-        url = f"{endpoint}/api/embeddings"
-        max_retries = 3
-        for attempt in range(max_retries):
-            try:
-                # Embedding calls use a longer timeout — Ollama can take 30s+
-                # to load a model on cold start, then it's fast.
-                resp = await self._client.post(
-                    url,
-                    json={"model": settings.EMBEDDING_MODEL, "prompt": text},
-                    timeout=httpx.Timeout(120.0),
-                )
-                resp.raise_for_status()
-                return resp.json()["embedding"]
-            except Exception as exc:
-                if attempt < max_retries - 1:
-                    wait = 1.0 * (2 ** attempt) + random.uniform(0, 0.5)
-                    logger.warning("Embedding attempt %d/%d failed: %s — retrying in %.1fs",
-                                   attempt + 1, max_retries, exc, wait)
-                    await asyncio.sleep(wait)
-                else:
-                    raise RuntimeError(f"Embedding failed after {max_retries} attempts via {url}: {exc}") from exc
+        """Embed text locally via Ollama (nomic-embed-text)."""
+        overrides = get_request_overrides()
+        ollama_endpoint = (overrides.ollama_endpoint if overrides and overrides.ollama_endpoint else settings.OLLAMA_ENDPOINT)
+        url = f"{ollama_endpoint.rstrip('/')}/api/embeddings"
+        try:
+            # Embedding calls use a longer timeout — Ollama can take 30s+
+            # to load a model on cold start, then it's fast.
+            resp = await self._client.post(
+                url,
+                json={"model": settings.EMBEDDING_MODEL, "prompt": text},
+                timeout=httpx.Timeout(120.0),
+            )
+            resp.raise_for_status()
+            return resp.json()["embedding"]
+        except Exception as exc:
+            raise RuntimeError(f"Embedding failed via {url}: {exc}") from exc
 
     async def aclose(self) -> None:
         await self._client.aclose()
 
     # -- internals ----------------------------------------------------------
 
-    def _model_for(self, provider: str, tier: str) -> str | None:
+    def _model_for(self, provider: str, tier: str, override: str | None = None) -> str | None:
         """Resolve the model for a provider+tier, or None if unavailable.
 
-        Checks per-request overrides from Settings UI headers first,
-        falling back to .env config.
+        ``override`` lets callers pin a specific model. Credential gating still
+        applies: nvidia/openrouter without an API key resolve to None even with
+        an override (so the router can't loop a paid provider we have no key for).
         """
-        from .main import get_overrides
-        ov = get_overrides()
+        overrides = get_request_overrides()
+        nvidia_key = (overrides.nvidia_api_key if overrides and overrides.nvidia_api_key else settings.NVIDIA_NIM_API_KEY)
+        openrouter_key = (overrides.openrouter_api_key if overrides and overrides.openrouter_api_key else settings.OPENROUTER_API_KEY)
+        lmstudio_model = (overrides.lmstudio_model if overrides and overrides.lmstudio_model else settings.LMSTUDIO_MODEL)
+        custom_model = (overrides.custom_model if overrides and overrides.custom_model else settings.CUSTOM_LLM_MODEL)
 
-        # For lmstudio / custom, use the explicit model name
+        # Explicit model override: only enforce provider credentials
+        if override:
+            if provider == "nvidia" and not nvidia_key:
+                return None
+            if provider == "openrouter" and not openrouter_key:
+                return None
+            return override
+
+        # For lmstudio / custom, use the explicit model name from settings/overrides
         if provider == "lmstudio":
-            return (ov.lmstudio_model or settings.LMSTUDIO_MODEL) or None
+            return lmstudio_model or None
         if provider == "custom":
-            return settings.CUSTOM_LLM_MODEL or None
+            return custom_model or None
 
         tier_models = settings.LLM_MODELS.get(tier, settings.LLM_MODELS["simple"])
         model = tier_models.get(provider)
         if not model:
             return None
-        # Check the provider has credentials (override or env)
-        if provider == "nvidia" and not (ov.nvidia_api_key or settings.NVIDIA_NIM_API_KEY):
+        # Check the provider has credentials configured
+        if provider == "nvidia" and not nvidia_key:
             return None
-        if provider == "openrouter" and not (ov.openrouter_api_key or settings.OPENROUTER_API_KEY):
+        if provider == "openrouter" and not openrouter_key:
             return None
         return model
 
@@ -266,20 +258,8 @@ class LLMRouter:
         return True
 
     async def _acquire_slot(self, provider: str) -> bool:
-        """Check rate-limit slot. Returns True if granted, False immediately if full.
-
-        For local providers (ollama, lmstudio), never blocks — skips immediately
-        if the bucket is full. This prevents asyncio.CancelledError from the
-        synthesis timeout propagating through the router uncaught.
-        """
+        """Wait up to the window for a rate-limit slot. Returns True if granted."""
         bucket = self._buckets[provider]
-        if provider in ("ollama", "lmstudio", "custom"):
-            # Local providers — never block, skip immediately if full
-            if bucket.allow():
-                bucket.record()
-                return True
-            return False
-        # Remote providers — wait up to the window for a slot
         deadline = time.monotonic() + bucket.window_seconds
         while time.monotonic() < deadline:
             if bucket.allow():
@@ -322,24 +302,24 @@ class LLMRouter:
         cache_control: bool,
         json_mode: bool,
     ) -> dict[str, Any]:
-        # Resolve endpoint and API key per provider (overrides from Settings UI first)
-        from .main import get_overrides
-        ov = get_overrides()
+        overrides = get_request_overrides()
+
+        # Resolve endpoint and API key per provider
         if provider == "nvidia":
-            endpoint = ov.nvidia_endpoint or settings.NVIDIA_NIM_ENDPOINT
-            api_key = ov.nvidia_api_key or settings.NVIDIA_NIM_API_KEY
+            endpoint = (overrides.nvidia_endpoint if overrides and overrides.nvidia_endpoint else settings.NVIDIA_NIM_ENDPOINT)
+            api_key = (overrides.nvidia_api_key if overrides and overrides.nvidia_api_key else settings.NVIDIA_NIM_API_KEY)
         elif provider == "openrouter":
-            endpoint = ov.openrouter_endpoint or settings.OPENROUTER_ENDPOINT
-            api_key = ov.openrouter_api_key or settings.OPENROUTER_API_KEY
+            endpoint = (overrides.openrouter_endpoint if overrides and overrides.openrouter_endpoint else settings.OPENROUTER_ENDPOINT)
+            api_key = (overrides.openrouter_api_key if overrides and overrides.openrouter_api_key else settings.OPENROUTER_API_KEY)
         elif provider == "lmstudio":
-            endpoint = ov.lmstudio_endpoint or settings.LMSTUDIO_ENDPOINT
+            endpoint = (overrides.lmstudio_endpoint if overrides and overrides.lmstudio_endpoint else settings.LMSTUDIO_ENDPOINT)
             api_key = settings.LMSTUDIO_API_KEY
         elif provider == "custom":
-            endpoint = settings.CUSTOM_LLM_ENDPOINT
-            api_key = settings.CUSTOM_LLM_API_KEY
+            endpoint = (overrides.custom_endpoint if overrides and overrides.custom_endpoint else settings.CUSTOM_LLM_ENDPOINT)
+            api_key = (overrides.custom_api_key if overrides and overrides.custom_api_key else settings.CUSTOM_LLM_API_KEY)
         else:
-            endpoint = settings.NVIDIA_NIM_ENDPOINT
-            api_key = settings.NVIDIA_NIM_API_KEY
+            endpoint = (overrides.nvidia_endpoint if overrides and overrides.nvidia_endpoint else settings.NVIDIA_NIM_ENDPOINT)
+            api_key = (overrides.nvidia_api_key if overrides and overrides.nvidia_api_key else settings.NVIDIA_NIM_API_KEY)
         url = f"{endpoint.rstrip('/')}/chat/completions"
 
         payload: dict[str, Any] = {
@@ -374,20 +354,9 @@ class LLMRouter:
         max_tokens: int,
         temperature: float,
     ) -> dict[str, Any]:
-        # For qwen3 thinking models, prepend /no_think to suppress reasoning
-        # trace and get direct answers (saves ~1500 tokens per request)
-        if "qwen3" in model.lower():
-            messages = list(messages)
-            if messages and messages[0]["role"] == "user":
-                messages[0] = {
-                    "role": "user",
-                    "content": "/no_think\n" + messages[0]["content"],
-                }
-
-        from .main import get_overrides
-        ov = get_overrides()
-        endpoint = ov.ollama_endpoint or settings.OLLAMA_ENDPOINT
-        url = f"{endpoint}/api/chat"
+        overrides = get_request_overrides()
+        ollama_endpoint = (overrides.ollama_endpoint if overrides and overrides.ollama_endpoint else settings.OLLAMA_ENDPOINT)
+        url = f"{ollama_endpoint.rstrip('/')}/api/chat"
         resp = await self._client.post(
             url,
             json={
@@ -403,12 +372,8 @@ class LLMRouter:
         )
         resp.raise_for_status()
         data = resp.json()
-        content = data["message"]["content"]
-        # Strip <think>...</think>` tags (qwen3 thinking tokens) so the model's reasoning is hidden from the user
-        if "<think>" in content:
-            content = re.sub(r"<think>.*?</think>\s*", "", content, flags=re.DOTALL).strip()
         return {
-            "content": content,
+            "content": data["message"]["content"],
             "provider": "ollama",
             "model": model,
             "cached": False,

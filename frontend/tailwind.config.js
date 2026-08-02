@@ -38,38 +38,6 @@ export default {
           DEFAULT: "hsl(var(--card))",
           foreground: "hsl(var(--card-foreground))",
         },
-        // Neo-brutalist palette (CSS-var driven so it flips in dark mode)
-        beige: {
-          DEFAULT: "var(--beige)",
-          deep: "var(--beige-deep)",
-        },
-        cream: "var(--cream)",
-        ink: {
-          DEFAULT: "var(--ink)",
-          soft: "var(--ink-soft)",
-        },
-        blue: {
-          DEFAULT: "var(--blue)",
-          deep: "var(--blue-deep)",
-          pale: "var(--blue-pale)",
-        },
-        cyan: {
-          DEFAULT: "var(--cyan)",
-          pale: "var(--cyan-pale)",
-        },
-      },
-      fontFamily: {
-        display: ["Petrona", "Georgia", "serif"],
-        sans: ["'Source Sans 3'", "system-ui", "sans-serif"],
-        mono: ["'Azeret Mono'", "ui-monospace", "monospace"],
-      },
-      boxShadow: {
-        hard: "4px 4px 0 0 var(--shadow-ink)",
-        "hard-sm": "3px 3px 0 0 var(--shadow-ink)",
-        "hard-lg": "6px 6px 0 0 var(--shadow-ink)",
-        "hard-blue": "4px 4px 0 0 var(--blue-deep)",
-        "hard-cyan": "4px 4px 0 0 var(--cyan)",
-        "hard-none": "0 0 0 0 var(--shadow-ink)",
       },
       borderRadius: {
         lg: "var(--radius)",

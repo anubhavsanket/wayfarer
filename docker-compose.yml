@@ -23,7 +23,6 @@ services:
       - chromadb
       - ollama
       - redis
-    restart: unless-stopped
     volumes:
       - ./data/uploads:/app/data/uploads
       - ./config:/app/config:ro
@@ -35,7 +34,6 @@ services:
     image: chromadb/chroma:0.5.23
     ports:
       - "8001:8000"
-    restart: unless-stopped
     volumes:
       - chroma_data:/chroma/chroma
 
@@ -45,23 +43,20 @@ services:
       - "11434:11434"
     volumes:
       - ollama_data:/root/.ollama
-    restart: unless-stopped
-    # GPU passthrough — uncomment the deploy block below on machines with
-    # an NVIDIA GPU + Container Toolkit installed. Without it, Ollama runs
-    # on CPU (slower) and the router falls back to API inference (NIM/OpenRouter).
-    # deploy:
-    #   resources:
-    #     reservations:
-    #       devices:
-    #         - driver: nvidia
-    #           count: 1
-    #           capabilities: [gpu]
+    # GPU passthrough — omit the `deploy` block entirely on machines without
+    # an NVIDIA GPU; the router falls back to API inference (NIM/OpenRouter).
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
 
   redis:
     image: redis:7-alpine
     ports:
       - "6379:6379"
-    restart: unless-stopped
 
   frontend:
     build:
@@ -71,7 +66,6 @@ services:
       - "3000:3000"
     depends_on:
       - api
-    restart: unless-stopped
 
 volumes:
   chroma_data:

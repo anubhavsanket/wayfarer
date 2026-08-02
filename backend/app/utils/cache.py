@@ -18,9 +18,6 @@ rewritten when stale entries are pruned.
 from __future__ import annotations
 
 import hashlib
-
-# Bump this to invalidate all cached entries when scoring logic changes
-_CACHE_VERSION = "v2"
 import json
 import time
 from dataclasses import dataclass
@@ -133,5 +130,3 @@ class ContentHashCache:
 search_cache = ContentHashCache("search", ttl_seconds=48 * 3600)   # 48h
 resume_cache = ContentHashCache("resume", ttl_seconds=72 * 3600)   # 72h
 jobs_cache = ContentHashCache("jobs", ttl_seconds=24 * 3600)       # 24h
-# Dedup cache: 14-day TTL matches the search recency window
-dedup_cache = ContentHashCache("dedup", ttl_seconds=14 * 24 * 3600)  # 14 days

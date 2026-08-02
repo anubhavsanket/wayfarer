@@ -53,20 +53,9 @@ class SearchResponse(BaseModel):
 
 # ---------- Stage 2: Resume / ATS ----------
 
-class StructuralIssueType(str, Enum):
-    TABLE_LOSS = "table_loss"
-    MISSING_SECTION = "missing_section"
-    SECTION_ORDER = "section_order"
-    CONTACT_INCOMPLETE = "contact_incomplete"
-    TOO_LONG = "too_long"
-
-
 class StructuralIssue(BaseModel):
     location: str
     issue: str
-    type: StructuralIssueType = StructuralIssueType.TABLE_LOSS
-    severity: Literal["high", "medium", "low"] = "medium"
-    suggestion: str | None = None
 
 
 class KeywordGap(BaseModel):
@@ -89,19 +78,13 @@ class ResumeCheckResponse(BaseModel):
 class AcceptedSuggestion(BaseModel):
     bullet_id: str
     suggested_text: str
+    original_text: str | None = None
+    author: str = "Wayfarer"
 
 
 class SaveMode(str, Enum):
     NEW_FILE = "new_file"
     OVERWRITE = "overwrite"
-    SET_AS_PRIMARY = "set_as_primary"
-
-
-class ResumePrimaryInfo(BaseModel):
-    """Response schema for primary resume endpoints (§8.6)."""
-    resume_id: str
-    filename: str
-    uploaded_at: str
 
 
 class ResumeSaveRequest(BaseModel):
@@ -109,12 +92,23 @@ class ResumeSaveRequest(BaseModel):
     accepted_suggestions: list[AcceptedSuggestion]
     mode: SaveMode
     confirm_overwrite: bool = False
+    author: str = "Wayfarer"
+
+
+class ChangeSummary(BaseModel):
+    """Summary of track-changes applied to a saved document."""
+    total_changes: int
+    insertions: int
+    deletions: int
+    accepted_count: int
+    rejected_count: int
 
 
 class ResumeSaveResponse(BaseModel):
     file_id: str
     file_ref: str
     mode_applied: SaveMode
+    changes: ChangeSummary | None = None
 
 
 # ---------- Stage 3: Job matching ----------
@@ -157,7 +151,6 @@ class JobMatch(BaseModel):
     location_match: LocationMatch
     top_gaps: list[str]
     apply_url: str
-    remote_type: str = ""
     flags: list[str] = Field(
         default_factory=list,
         description="Legitimacy flags: ghost/vague/unknown_company/sponsorship",
@@ -165,10 +158,6 @@ class JobMatch(BaseModel):
     experience_level: ExperienceLevel = ExperienceLevel.UNCLEAR
     min_experience_years: float | None = None
     employment_type: EmploymentType = EmploymentType.UNCLEAR
-    also_available_in: list[str] = Field(
-        default_factory=list,
-        description="Other cities where this same role is posted (mass-posting consolidation)",
-    )
 
 
 class AggregateGap(BaseModel):

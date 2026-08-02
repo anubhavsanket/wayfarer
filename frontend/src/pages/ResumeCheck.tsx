@@ -1,268 +1,184 @@
 import { useState } from "react";
-import { useMutation, useQuery } from "@tanstack/react-query";
-import { Upload, FileText, Save, Star } from "lucide-react";
+import { useMutation } from "@tanstack/react-query";
+import { Upload, FileText } from "lucide-react";
 
 import { api } from "@/lib/api";
-import type { ResumeCheckResponse, SaveMode } from "@/lib/types";
+import type { ResumeCheckResponse } from "@/lib/types";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
-import { Sticker } from "@/components/ui/badge";
-import { ScoreBar } from "@/components/ui/progress";
-import { Reveal, Stagger } from "@/components/Reveal";
-import { LoadingIndicator } from "@/components/LoadingIndicator";
 
-function tierVariant(tier: string): "verified" | "reworded" | "gap" {
-  if (tier === "verified") return "verified";
-  if (tier === "reworded") return "reworded";
-  return "gap";
+function tierColor(tier: string) {
+  if (tier === "verified") return "bg-green-100 text-green-800";
+  if (tier === "reworded") return "bg-yellow-100 text-yellow-800";
+  return "bg-red-100 text-red-800";
 }
 
 export default function ResumeCheckPage() {
+  const [resumeFile, setResumeFile] = useState<File | null>(null);
   const [jdText, setJdText] = useState("");
   const [result, setResult] = useState<ResumeCheckResponse | null>(null);
-  const [saveMode, setSaveMode] = useState<SaveMode | null>(null);
 
-  // One-off variant upload
-  const [useVariant, setUseVariant] = useState(false);
-  const [file, setFile] = useState<File | null>(null);
+  // Check if a resume is already stored from Settings
+  const storedResumeId = localStorage.getItem("resume_id") ?? "";
+  const storedFileName = localStorage.getItem("resume_filename") ?? "";
 
-  // FR2.10 (§8.6): check if a primary resume exists
-  const { data: primary } = useQuery({
-    queryKey: ["resume-primary"],
-    queryFn: () => api.getResumePrimary(),
-    retry: false,
-  });
-
-  const checkMutation = useMutation({
-    mutationFn: ({ file, jd }: { file: File | null; jd: string }) =>
-      api.resumeCheck(file, jd),
+  const mutation = useMutation({
+    mutationFn: ({ file, jd }: { file?: File; jd: string }) =>
+      file
+        ? api.resumeCheck(jd, file)
+        : api.resumeCheck(jd, undefined, storedResumeId),
     onSuccess: (data) => {
       setResult(data);
-      setSaveMode(null);
       if (data.resume_id) {
         localStorage.setItem("resume_id", data.resume_id);
       }
     },
+    onError: (error: Error) => {
+      // If the stored resume_id is stale (404 — the server lost the file),
+      // clear it and let the user re-upload instead of staying stuck.
+      if (/404|not found/i.test(error.message)) {
+        localStorage.removeItem("resume_id");
+        localStorage.removeItem("resume_filename");
+      }
+    },
   });
 
-  const canCheck = jdText.trim() && ((primary && !useVariant) || (useVariant && file));
+  const canCheck = (storedResumeId || resumeFile) && jdText.trim();
 
   const handleCheck = () => {
     if (!jdText.trim()) return;
-    setResult(null); // Clear previous results before new check
-    setSaveMode(null);
-    if (useVariant && file) {
-      checkMutation.mutate({ file, jd: jdText.trim() });
-    } else if (primary) {
-      checkMutation.mutate({ file: null, jd: jdText.trim() });
-    }
+    // Use the uploaded file if present, otherwise fall back to the stored resume
+    mutation.mutate({ file: resumeFile ?? undefined, jd: jdText.trim() });
   };
 
-  // Save mutation
-  const saveMutation = useMutation({
-    mutationFn: (mode: SaveMode) =>
-      api.resumeSave({
-        resume_id: result?.resume_id ?? "",
-        accepted_suggestions: result?.keyword_gaps
-          ?.filter((g) => g.suggested_text)
-          .map((g) => ({
-            bullet_id: g.bullet_id ?? "",
-            suggested_text: g.suggested_text ?? "",
-          })) ?? [],
-        mode,
-        confirm_overwrite: mode === "overwrite",
-      }),
-    onSuccess: () => setSaveMode(null),
-  });
-
   return (
-    <div className="space-y-4">
-      {/* ── Input card ──────────────────────────────────────── */}
+    <div className="space-y-6">
       <Card className="p-6">
-        <h2 className="font-display mb-1 text-lg font-bold">ATS Resume Checker</h2>
+        <h2 className="mb-4 text-lg font-semibold">ATS Resume Checker</h2>
         <p className="mb-4 text-sm text-muted-foreground">
-          {primary
-            ? "Using your primary resume from Settings. Paste a JD to check compatibility."
-            : "Upload your resume and paste a JD to get ATS compatibility scores with confidence-tiered redline suggestions."}
+          {storedResumeId
+            ? "Using your main resume from Settings. Paste a JD to check."
+            : "Upload your resume and paste a JD to get ATS compatibility scores with confidence-tiered redline suggestions."
+          }
         </p>
 
         <div className="mb-4 space-y-3">
-          {/* Primary resume display */}
-          {primary && !useVariant && (
-            <div className="flex items-center gap-2 rounded-md bg-beige-deep p-3 text-sm border-2 border-ink/20">
-              <FileText className="h-4 w-4 shrink-0 text-blue" />
-              <span className="font-medium truncate">{primary.filename || "Resume uploaded"}</span>
-              <span className="text-xs text-muted-foreground">({primary.resume_id})</span>
-              <button
-                onClick={() => setUseVariant(true)}
-                className="ml-auto text-xs font-semibold text-blue underline"
-              >
-                Use a different resume
-              </button>
-            </div>
-          )}
-
-          {/* Variant upload */}
-          {(useVariant || !primary) && (
-            <div className="space-y-2">
-              <label className="flex cursor-pointer items-center gap-2 rounded-md border-2 border-dashed border-ink bg-cream p-4 text-sm text-muted-foreground transition-colors hover:bg-beige-deep">
-                <Upload className="h-4 w-4" />
-                {file ? file.name : "Upload resume (PDF/DOCX)"}
+          {storedResumeId && !resumeFile ? (
+            <div className="flex items-center gap-2 rounded-md bg-muted p-3 text-sm">
+              <FileText className="h-4 w-4" />
+              <span>{storedFileName || "Resume uploaded"}</span>
+              <span className="text-xs text-muted-foreground">({storedResumeId})</span>
+              <label className="ml-auto cursor-pointer text-xs text-primary underline">
+                Replace
                 <input
                   type="file"
                   accept=".pdf,.docx"
                   className="hidden"
-                  onChange={(e) => setFile(e.target.files?.[0] ?? null)}
+                  onChange={(e) => setResumeFile(e.target.files?.[0] ?? null)}
                 />
               </label>
-              {primary && (
-                <button
-                  onClick={() => { setUseVariant(false); setFile(null); }}
-                  className="text-xs font-semibold text-muted-foreground underline"
-                >
-                  ← Use primary resume instead
-                </button>
-              )}
             </div>
+          ) : (
+            <label className="flex cursor-pointer items-center gap-2 rounded-md border border-dashed p-4 text-sm text-muted-foreground hover:bg-muted">
+              <Upload className="h-4 w-4" />
+              {resumeFile ? resumeFile.name : "Upload resume (PDF/DOCX)"}
+              <input
+                type="file"
+                accept=".pdf,.docx"
+                className="hidden"
+                onChange={(e) => setResumeFile(e.target.files?.[0] ?? null)}
+              />
+            </label>
           )}
-
           <textarea
             value={jdText}
             onChange={(e) => setJdText(e.target.value)}
-            rows={5}
+            rows={6}
             placeholder="Paste job description here..."
-            className="w-full resize-y rounded-md border-2 border-ink bg-cream px-4 py-2.5 text-sm placeholder:text-ink/40 focus:outline-none focus:ring-2 focus:ring-cyan focus:ring-offset-2 focus:ring-offset-card"
+            className="w-full rounded-md border bg-background px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-ring"
           />
-          {jdText.trim().length > 0 && (
-            <p className="text-right text-[10px] font-mono text-muted-foreground">
-              {jdText.trim().length} chars
-            </p>
-          )}
         </div>
 
         <Button
-          disabled={!canCheck || checkMutation.isPending}
+          disabled={!canCheck || mutation.isPending}
           onClick={handleCheck}
         >
           <FileText className="mr-2 h-4 w-4" />
-          {checkMutation.isPending ? "Checking..." : "Check Resume"}
+          {mutation.isPending ? "Checking..." : "Check Resume"}
         </Button>
       </Card>
 
-      {/* Loading */}
-      {checkMutation.isPending && (
-        <Reveal>
-          <LoadingIndicator message="Checking your resume" />
-        </Reveal>
-      )}
-
-      {/* Error */}
-      {checkMutation.isError && (
+      {mutation.isError && (
         <Card className="border-destructive p-4 text-sm text-destructive">
-          Error: {checkMutation.error.message}
+          Error: {mutation.error.message}
         </Card>
       )}
 
-      {/* ── Results ─────────────────────────────────────────── */}
       {result && (
-        <Stagger className="space-y-4">
-          {/* ATS Score */}
+        <>
           <Card className="p-6">
-            <Sticker variant="blue" className="mb-3">ATS Score</Sticker>
-            <ScoreBar
-              value={result.ats_score * 100}
-              decimals={0}
-              suffix="%"
-              className="max-w-md"
-            />
+            <h3 className="mb-1 font-medium">ATS Score</h3>
+            <p className="text-3xl font-bold">
+              {(result.ats_score * 100).toFixed(0)}%
+            </p>
           </Card>
 
-          {/* Structural Issues */}
           {result.structural_issues.length > 0 && (
             <Card className="p-6">
-              <Sticker variant="ink" className="mb-3">Structural Issues</Sticker>
-              <ul className="space-y-3 text-sm">
-                {result.structural_issues.map((issue, i) => {
-                  const severityColor = issue.severity === "high"
-                    ? "text-red-400"
-                    : issue.severity === "medium"
-                    ? "text-orange-400"
-                    : "text-green-400";
-                  const severityBg = issue.severity === "high"
-                    ? "bg-red-400/10"
-                    : issue.severity === "medium"
-                    ? "bg-orange-400/10"
-                    : "bg-green-400/10";
-                  const typeLabel = issue.type
-                    ? issue.type.replace(/_/g, " ").replace(/\b\w/g, (c: string) => c.toUpperCase())
-                    : issue.location;
-                  return (
-                    <li key={i} className="rounded-lg border border-white/10 p-3">
-                      <div className="mb-1 flex items-center gap-2 flex-wrap">
-                        <Sticker variant="muted" className="shrink-0">
-                          {typeLabel}
-                        </Sticker>
-                        {issue.severity && (
-                          <span className={`text-xs font-medium px-2 py-0.5 rounded ${severityBg} ${severityColor}`}>
-                            {issue.severity.toUpperCase()}
-                          </span>
-                        )}
-                      </div>
-                      <p className="leading-relaxed mb-1">{issue.issue}</p>
-                      {issue.suggestion && (
-                        <p className="text-xs text-zinc-400 italic">
-                          Suggestion: {issue.suggestion}
-                        </p>
-                      )}
-                    </li>
-                  );
-                })}
+              <h3 className="mb-3 font-medium">Structural Issues</h3>
+              <ul className="space-y-1 text-sm">
+                {result.structural_issues.map((issue, i) => (
+                  <li key={i} className="flex gap-2">
+                    <span className="font-mono text-xs text-muted-foreground">
+                      {issue.location}
+                    </span>
+                    <span>{issue.issue}</span>
+                  </li>
+                ))}
               </ul>
             </Card>
           )}
 
-          {/* Keyword Gaps */}
           {result.keyword_gaps.length > 0 && (
             <Card className="p-6">
-              <Sticker variant="cyan" className="mb-4">Keyword Analysis</Sticker>
+              <h3 className="mb-3 font-medium">Keyword Analysis</h3>
               <ul className="space-y-4">
                 {result.keyword_gaps.map((gap, i) => (
                   <li key={i} className="text-sm">
                     <div className="mb-1 flex items-center gap-2">
-                      <span className="font-semibold">{gap.keyword}</span>
-                      <Sticker variant={tierVariant(gap.tier)}>
+                      <span className="font-medium">{gap.keyword}</span>
+                      <span className={`rounded px-1.5 py-0.5 text-xs font-medium ${tierColor(gap.tier)}`}>
                         {gap.tier}
-                      </Sticker>
+                      </span>
                       {gap.confidence != null && (
-                        <span className="font-mono text-xs text-muted-foreground">
+                        <span className="text-xs text-muted-foreground">
                           {(gap.confidence * 100).toFixed(0)}%
                         </span>
                       )}
                     </div>
-
                     {gap.rationale && (
-                      <p className="pl-4 text-xs leading-relaxed text-muted-foreground">
+                      <p className="pl-4 text-xs text-muted-foreground">
                         {gap.rationale}
                       </p>
                     )}
-
+                    {/* Side-by-side redline view when both original and suggested exist */}
                     {gap.original_text && gap.suggested_text ? (
-                      <div className="mt-2 ml-4 grid grid-cols-2 gap-2 rounded-md border-2 border-ink bg-cream p-3 text-xs">
+                      <div className="mt-2 ml-4 grid grid-cols-2 gap-2 rounded-md border p-3 text-xs">
                         <div>
-                          <span className="mb-1 block font-semibold text-destructive">Original</span>
+                          <span className="mb-1 block font-medium text-destructive">Original</span>
                           <p className="whitespace-pre-wrap text-muted-foreground line-through">
                             {gap.original_text}
                           </p>
                         </div>
                         <div>
-                          <span className="mb-1 block font-semibold text-blue">Suggested</span>
-                          <p className="whitespace-pre-wrap text-blue">
+                          <span className="mb-1 block font-medium text-green-700">Suggested</span>
+                          <p className="whitespace-pre-wrap text-green-700">
                             {gap.suggested_text}
                           </p>
                         </div>
                       </div>
                     ) : gap.suggested_text ? (
-                      <p className="mt-1 whitespace-pre-wrap pl-4 text-xs italic text-blue">
+                      <p className="mt-1 whitespace-pre-wrap pl-4 text-xs italic text-primary">
                         → {gap.suggested_text}
                       </p>
                     ) : null}
@@ -271,56 +187,7 @@ export default function ResumeCheckPage() {
               </ul>
             </Card>
           )}
-
-          {/* Save actions */}
-          <Card className="p-6">
-            <Sticker variant="muted" className="mb-3">Save Changes</Sticker>
-            <p className="mb-4 text-sm text-muted-foreground">
-              Choose how to save the keyword suggestions above.
-            </p>
-            <div className="flex flex-wrap gap-3">
-              <Button
-                variant={saveMode === "new_file" ? "default" : "outline"}
-                disabled={saveMutation.isPending}
-                onClick={() => { setSaveMode("new_file"); saveMutation.mutate("new_file"); }}
-              >
-                <Save className="mr-2 h-4 w-4" />
-                {saveMutation.isPending && saveMode === "new_file" ? "Saving..." : "Save as New File"}
-              </Button>
-
-              {result.resume_id && (
-                <>
-                  <Button
-                    variant={saveMode === "set_as_primary" ? "default" : "outline"}
-                    disabled={saveMutation.isPending}
-                    onClick={() => { setSaveMode("set_as_primary"); saveMutation.mutate("set_as_primary"); }}
-                  >
-                    <Star className="mr-2 h-4 w-4" />
-                    {saveMutation.isPending && saveMode === "set_as_primary" ? "Saving..." : "Set as Primary"}
-                  </Button>
-                  <Button
-                    variant="destructive"
-                    disabled={saveMutation.isPending}
-                    onClick={() => {
-                      if (window.confirm("Overwrite the original resume file? This cannot be undone.")) {
-                        setSaveMode("overwrite");
-                        saveMutation.mutate("overwrite");
-                      }
-                    }}
-                  >
-                    Overwrite Original
-                  </Button>
-                </>
-              )}
-            </div>
-
-            {saveMutation.isSuccess && (
-              <Reveal className="mt-3">
-                <Sticker variant="blue">✓ Changes saved successfully</Sticker>
-              </Reveal>
-            )}
-          </Card>
-        </Stagger>
+        </>
       )}
     </div>
   );

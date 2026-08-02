@@ -1,18 +1,15 @@
-"""Resume parser: any document format → structured sections + ATS-visible text.
-
-Parsing pipeline (cheapest first):
-1. AnyDoc (Rust) — handles PDF, DOCX, PPTX, XLSX, RTF, EPUB, CSV, ODT
-   → clean markdown output,5ms median conversion
-2. pdfplumber (fallback) — text-based PDFs only
-3. python-docx (fallback) — DOCX only
-4. PyMuPDF + Tesseract OCR (last resort) — image-based PDFs
+"""Resume parser: PDF/DOCX → structured sections + ATS-visible text.
 
 FR2.1 (PRD §8.1): Parse an uploaded resume into structured sections
 (contact, skills, experience bullets, education).
 
 FR2.2 (PRD §8.2): Run an ATS parsing simulation — extract text the way a
 naive ATS parser would (layout-blind, table-ignorant), and diff against
-the properly structured extraction to flag structural loss.
+the properly structured extraction to flag structural loss (tables,
+multi-column sections that vanish).
+
+Acceptance criterion: "A resume with a table-based skills section shows a
+structural-loss flag on that section."
 """
 from __future__ import annotations
 
@@ -22,7 +19,10 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-from ..models.schemas import StructuralIssue, StructuralIssueType
+import pdfplumber
+import docx
+
+from ..models.schemas import StructuralIssue
 
 logger = logging.getLogger(__name__)
 
@@ -107,44 +107,27 @@ def _extract_contact(lines: list[str]) -> dict[str, str]:
 
 
 # ---------------------------------------------------------------------------
-# AnyDoc parser (primary — handles 14 formats)
+# PDF parsing
 # ---------------------------------------------------------------------------
 
-def _parse_with_anydoc(file_path: str) -> str | None:
-    """Try parsing with AnyDoc (Rust). Returns markdown text or None on failure."""
-    try:
-        import anydoc
-        md = anydoc.to_markdown(file_path)
-        if md and md.strip():
-            logger.info("AnyDoc parsed %s successfully (%d chars)", file_path, len(md))
-            return md
-        return None
-    except ImportError:
-        logger.debug("AnyDoc not installed — falling back to legacy parsers")
-        return None
-    except Exception as exc:
-        logger.info("AnyDoc failed on %s: %s — trying fallback parsers", file_path, exc)
-        return None
+def _parse_pdf(file_path: str) -> tuple[list[str], dict[int, str], list[dict[str, Any]]]:
+    """Parse PDF: returns (all_lines, page_texts, tables).
 
-
-# ---------------------------------------------------------------------------
-# Legacy PDF parser (fallback)
-# ---------------------------------------------------------------------------
-
-def _parse_pdf_legacy(file_path: str) -> tuple[list[str], dict[int, str], list[dict[str, Any]]]:
-    """Fallback PDF parser using pdfplumber. Returns (all_lines, page_texts, tables)."""
-    import pdfplumber
-
+    page_texts: page number → layout-blind text (simulating a naive ATS parser)
+    tables: list of {page, headers, rows} for every table found
+    """
     all_lines: list[str] = []
     page_texts: dict[int, str] = {}
     tables: list[dict[str, Any]] = []
 
     with pdfplumber.open(file_path) as pdf:
         for page_num, page in enumerate(pdf.pages, start=1):
+            # Layout-blind extraction (what a naive ATS sees)
             page_text = page.extract_text(x_tolerance=2, y_tolerance=2) or ""
             page_texts[page_num] = page_text
             all_lines.extend(page_text.splitlines())
 
+            # Structured table extraction (what a good PDF reader sees)
             for table in page.extract_tables():
                 if not table:
                     continue
@@ -164,14 +147,12 @@ def _parse_pdf_legacy(file_path: str) -> tuple[list[str], dict[int, str], list[d
     return all_lines, page_texts, tables
 
 
-# ---------------------------------------------------------------------------
-# Legacy DOCX parser (fallback)
-# ---------------------------------------------------------------------------
+def _parse_docx(file_path: str) -> tuple[list[str], dict[int, str], list[dict[str, Any]]]:
+    """Parse DOCX: returns (paragraph_lines, page_placeholder, tables).
 
-def _parse_docx_legacy(file_path: str) -> tuple[list[str], dict[int, str], list[dict[str, Any]]]:
-    """Fallback DOCX parser using python-docx."""
-    import docx
-
+    DOCX has no "pages"; page_placeholder is {1: full text} for uniform API.
+    Tables: list of {page, headers, rows, cell_text}.
+    """
     doc = docx.Document(file_path)
     paragraph_lines: list[str] = []
     for para in doc.paragraphs:
@@ -179,6 +160,7 @@ def _parse_docx_legacy(file_path: str) -> tuple[list[str], dict[int, str], list[
         if text:
             paragraph_lines.append(text)
 
+    # Table extraction
     tables: list[dict[str, Any]] = []
     for table in doc.tables:
         if not table.rows:
@@ -196,44 +178,6 @@ def _parse_docx_legacy(file_path: str) -> tuple[list[str], dict[int, str], list[
         })
 
     return paragraph_lines, {1: "\n".join(paragraph_lines)}, tables
-
-
-# ---------------------------------------------------------------------------
-# OCR fallback (image-based PDFs)
-# ---------------------------------------------------------------------------
-
-def _ocr_pdf(file_path: str) -> tuple[list[str], dict[int, str]]:
-    """OCR an image-based PDF using PyMuPDF (render) + Tesseract (recognise)."""
-    try:
-        import fitz  # PyMuPDF
-        import pytesseract
-        from PIL import Image
-        import io
-    except ImportError as exc:
-        logger.warning("OCR dependencies not available (%s) — cannot OCR PDF", exc)
-        return [], {}
-
-    all_lines: list[str] = []
-    page_texts: dict[int, str] = {}
-
-    try:
-        doc = fitz.open(file_path)
-    except Exception as exc:
-        logger.warning("PyMuPDF failed to open PDF: %s", exc)
-        return [], {}
-
-    for page_num in range(len(doc)):
-        page = doc[page_num]
-        mat = fitz.Matrix(2, 2)
-        pix = page.get_pixmap(matrix=mat)
-        img = Image.open(io.BytesIO(pix.tobytes("png")))
-        text = pytesseract.image_to_string(img, lang="eng")
-        page_texts[page_num + 1] = text
-        all_lines.extend(text.splitlines())
-
-    doc.close()
-    logger.info("OCR extracted %d chars across %d pages", sum(len(t) for t in page_texts.values()), len(page_texts))
-    return all_lines, page_texts
 
 
 # ---------------------------------------------------------------------------
@@ -257,155 +201,7 @@ def _detect_structural_issues(
                         f"Table header '{header}' not visible in ATS text — "
                         f"table structure may be lost by ATS parsers"
                     ),
-                    type=StructuralIssueType.TABLE_LOSS,
-                    severity="medium",
-                    suggestion="Convert tables to bullet-point lists for better ATS compatibility.",
                 ))
-    return issues
-
-
-# ---------------------------------------------------------------------------
-# Enhanced structural checks
-# ---------------------------------------------------------------------------
-
-# Standard section order — earlier = higher priority
-_SECTION_ORDER = [
-    "contact", "summary", "experience", "education",
-    "skills", "projects", "certifications", "publications", "awards",
-]
-
-
-def _check_missing_sections(sections: dict[str, list[str]]) -> list[StructuralIssue]:
-    """Flag critical sections that are missing from the resume."""
-    issues: list[StructuralIssue] = []
-    section_keys = set(sections.keys())
-
-    if "experience" not in section_keys and "projects" not in section_keys:
-        issues.append(StructuralIssue(
-            location="resume structure",
-            issue="No 'Experience' or 'Projects' section found — ATS parsers may not recognize your work history.",
-            type=StructuralIssueType.MISSING_SECTION,
-            severity="high",
-            suggestion="Add an 'Experience' section with your work history and bullet-pointed achievements.",
-        ))
-
-    if "education" not in section_keys:
-        issues.append(StructuralIssue(
-            location="resume structure",
-            issue="No 'Education' section found — many roles require a degree or formal qualifications.",
-            type=StructuralIssueType.MISSING_SECTION,
-            severity="high",
-            suggestion="Add an 'Education' section with your degree, institution, and graduation year.",
-        ))
-
-    if "skills" not in section_keys:
-        issues.append(StructuralIssue(
-            location="resume structure",
-            issue="No 'Skills' section found — ATS parsers rely on this section for keyword matching.",
-            type=StructuralIssueType.MISSING_SECTION,
-            severity="medium",
-            suggestion="Add a 'Skills' section listing your technical skills, tools, and certifications.",
-        ))
-
-    return issues
-
-
-def _check_section_order(sections: dict[str, list[str]]) -> list[StructuralIssue]:
-    """Validate section ordering follows standard resume conventions."""
-    issues: list[StructuralIssue] = []
-    present_order = [s for s in _SECTION_ORDER if s in sections]
-
-    for i in range(len(present_order)):
-        for j in range(i + 1, len(present_order)):
-            # If a higher-priority section appears after a lower-priority one
-            if _SECTION_ORDER.index(present_order[i]) > _SECTION_ORDER.index(present_order[j]):
-                issues.append(StructuralIssue(
-                    location="section order",
-                    issue=(
-                        f"'{present_order[i].title()}' appears before '{present_order[j].title()}' — "
-                        f"standard order is {present_order[j].title()} first."
-                    ),
-                    type=StructuralIssueType.SECTION_ORDER,
-                    severity="low",
-                    suggestion=f"Move '{present_order[j].title()}' before '{present_order[i].title()}' for better readability.",
-                ))
-                break  # Only flag the first out-of-order pair per section
-
-    return issues
-
-
-def _check_contact_completeness(contact: dict[str, str]) -> list[StructuralIssue]:
-    """Check that essential contact information is present."""
-    issues: list[StructuralIssue] = []
-
-    if not contact.get("email"):
-        issues.append(StructuralIssue(
-            location="contact info",
-            issue="No email address found — recruiters cannot contact you without one.",
-            type=StructuralIssueType.CONTACT_INCOMPLETE,
-            severity="high",
-            suggestion="Add your email address at the top of your resume.",
-        ))
-
-    if not contact.get("phone"):
-        issues.append(StructuralIssue(
-            location="contact info",
-            issue="No phone number found — some employers require a phone number.",
-            type=StructuralIssueType.CONTACT_INCOMPLETE,
-            severity="medium",
-            suggestion="Add your phone number in the contact section.",
-        ))
-
-    if not contact.get("linkedin"):
-        issues.append(StructuralIssue(
-            location="contact info",
-            issue="No LinkedIn profile found — a LinkedIn link is expected for professional roles.",
-            type=StructuralIssueType.CONTACT_INCOMPLETE,
-            severity="low",
-            suggestion="Add your LinkedIn profile URL to the contact section.",
-        ))
-
-    return issues
-
-
-def _check_resume_length(raw_text: str) -> list[StructuralIssue]:
-    """Flag resumes that are excessively long."""
-    word_count = len(raw_text.split())
-    # ~250 words per page for a typical resume
-    pages_est = word_count / 250
-
-    if pages_est > 3:
-        return [StructuralIssue(
-            location="resume length",
-            issue=(
-                f"Resume is approximately {pages_est:.0f} pages — "
-                f"most ATS systems and recruiters prefer 1-2 pages."
-            ),
-            type=StructuralIssueType.TOO_LONG,
-            severity="medium",
-            suggestion="Condense to 1-2 pages by removing older or less relevant experience.",
-        )]
-    return []
-
-
-def _run_section_checks(
-    sections: dict[str, list[str]],
-    contact: dict[str, str],
-    raw_text: str,
-) -> list[StructuralIssue]:
-    """Run structural checks that apply regardless of the parse backend.
-
-    Table-loss detection (``_detect_structural_issues``) is deliberately
-    *not* included here — AnyDoc converts tables to text natively, so it only
-    matters for the legacy fallback parsers. The section/contact/length checks
-    must run on every path (markdown, AnyDoc, and legacy) or the
-    severity-weighted ATS penalty silently never fires.
-    """
-    issues: list[StructuralIssue] = []
-    issues.extend(_check_missing_sections(sections))
-    issues.extend(_check_section_order(sections))
-    issues.extend(_check_contact_completeness(contact))
-    issues.extend(_check_resume_length(raw_text))
     return issues
 
 
@@ -413,14 +209,15 @@ def _run_section_checks(
 # Section extraction
 # ---------------------------------------------------------------------------
 
+# Sections whose lines are treated as candidate bullets (evidence for matching)
 BULLET_SECTIONS = {"experience", "projects", "awards", "publications", "skills"}
 
 
 def _parse_sections(lines: list[str]) -> tuple[dict[str, list[str]], list[ResumeBullet]]:
-    """Extract named sections and bullets from lines."""
+    """Extract named sections and bullets from lines. Returns (sections, bullets)."""
     sections: dict[str, list[str]] = {}
     bullets: list[ResumeBullet] = []
-    current_section = "preamble"
+    current_section = "preamble"  # content before any known header
     bullet_id = 0
 
     for line in lines:
@@ -435,6 +232,8 @@ def _parse_sections(lines: list[str]) -> tuple[dict[str, list[str]], list[Resume
 
         sections.setdefault(current_section, []).append(stripped)
 
+        # Record as a bullet when it looks like one: a bullet glyph, or a
+        # substantive line inside a BULLET_SECTION (resumes rarely use glyphs).
         clean = BULLET_PATTERN.sub("", stripped).strip()
         is_bullet = bool(BULLET_PATTERN.match(stripped)) or (
             current_section in BULLET_SECTIONS and clean
@@ -450,105 +249,27 @@ def _parse_sections(lines: list[str]) -> tuple[dict[str, list[str]], list[Resume
     return sections, bullets
 
 
-def _markdown_to_lines(md: str) -> list[str]:
-    """Convert AnyDoc's markdown output to plain text lines for section parsing.
-
-    Strips markdown headings (# ## ###), bullet glyphs, bold/italic markers,
-    and other formatting to produce clean text lines.
-    """
-    lines = []
-    for raw_line in md.splitlines():
-        # Strip markdown heading markers
-        line = re.sub(r"^#{1,6}\s+", "", raw_line)
-        # Strip bold/italic markers
-        line = re.sub(r"\*{1,3}(.+?)\*{1,3}", r"\1", line)
-        line = re.sub(r"_{1,3}(.+?)_{1,3}", r"\1", line)
-        # Strip inline code
-        line = re.sub(r"`(.+?)`", r"\1", line)
-        # Strip links, keep text
-        line = re.sub(r"\[(.+?)\]\(.+?\)", r"\1", line)
-        # Strip images
-        line = re.sub(r"!\[.*?\]\(.+?\)", "", line)
-        # Strip horizontal rules
-        if re.match(r"^[\-\*_]{3,}\s*$", line.strip()):
-            continue
-        lines.append(line.rstrip())
-    return lines
-
-
 # ---------------------------------------------------------------------------
 # Public API
 # ---------------------------------------------------------------------------
 
 def parse_resume(file_path: str | Path) -> ParsedResume:
-    """Parse a resume file into a ``ParsedResume``.
+    """Parse a resume file (PDF or DOCX) into a ``ParsedResume``.
 
-    Pipeline (cheapest first):
-    1. AnyDoc → markdown → sections/bullets
-    2. pdfplumber (PDF) / python-docx (DOCX) → raw lines → sections/bullets
-    3. OCR (image-based PDF) → raw lines → sections/bullets
+    Returns structured sections, bullets, ATS-visible text, and any
+    structural issues detected (tables lost by naive ATS extraction).
     """
     path = str(file_path)
     ext = Path(path).suffix.lower()
 
-    # --- Markdown files: read directly (no conversion needed) ---
-    if ext == ".md":
-        md_text = Path(path).read_text(encoding="utf-8", errors="replace")
-        if md_text.strip():
-            lines = _markdown_to_lines(md_text)
-            raw_text = "\n".join(lines)
-            sections, bullets = _parse_sections(lines)
-            contact = _extract_contact(lines)
-            return ParsedResume(
-                sections=sections,
-                bullets=bullets,
-                ats_visible_text=md_text,
-                structural_issues=_run_section_checks(sections, contact, raw_text),
-                contact=contact,
-                raw_text=raw_text,
-            )
-
-    # --- Try AnyDoc first (handles PDF, DOCX, PPTX, XLSX, RTF, etc.) ---
-    md_text = _parse_with_anydoc(path)
-    if md_text:
-        lines = _markdown_to_lines(md_text)
-        raw_text = "\n".join(lines)
-        ats_text = md_text  # AnyDoc markdown IS the clean text
-        sections, bullets = _parse_sections(lines)
-        contact = _extract_contact(lines)
-        # Table-loss detection is skipped for AnyDoc (it converts tables to
-        # text natively), but section/contact/length checks still apply.
-        return ParsedResume(
-            sections=sections,
-            bullets=bullets,
-            ats_visible_text=ats_text,
-            structural_issues=_run_section_checks(sections, contact, raw_text),
-            contact=contact,
-            raw_text=raw_text,
-        )
-
-    # --- Fallback: legacy parsers ---
     if ext == ".pdf":
-        raw_lines, page_texts, tables = _parse_pdf_legacy(path)
+        raw_lines, page_texts, tables = _parse_pdf(path)
         ats_text = "\n".join(page_texts.values())
-
-        # OCR fallback for image-based PDFs
-        total_chars = sum(len(t) for t in page_texts.values())
-        if total_chars == 0:
-            logger.info("pdfplumber extracted no text — attempting OCR fallback")
-            raw_lines, page_texts = _ocr_pdf(path)
-            ats_text = "\n".join(page_texts.values())
-            tables = []  # OCR doesn't extract tables
-
     elif ext in (".docx", ".doc"):
-        raw_lines, page_texts, tables = _parse_docx_legacy(path)
+        raw_lines, page_texts, tables = _parse_docx(path)
         ats_text = "\n".join(page_texts.values())
-
     else:
-        raise ValueError(
-            f"Unsupported resume format: {ext}. "
-            "Supported: PDF, DOCX, MD, PPTX, XLSX, RTF, EPUB, CSV, ODT."
-        )
+        raise ValueError(f"Unsupported resume format: {ext} (use .pdf or .docx)")
 
     # Detect structural issues (table loss in ATS extraction)
     structural_issues = _detect_structural_issues(tables, ats_text)
@@ -557,18 +278,8 @@ def parse_resume(file_path: str | Path) -> ParsedResume:
     raw_text = "\n".join(raw_lines)
     sections, bullets = _parse_sections(raw_lines)
 
-    # Guard: if no text was extracted at all
-    if not raw_text.strip():
-        raise ValueError(
-            f"Could not extract text from {ext} file. "
-            "The file may be image-based (scanned) or corrupted. "
-            "Try re-exporting as DOCX from the original editor."
-        )
-
+    # Extract contact info
     contact = _extract_contact(raw_lines)
-
-    # Section/contact/length checks apply on every parse path
-    structural_issues.extend(_run_section_checks(sections, contact, raw_text))
 
     return ParsedResume(
         sections=sections,

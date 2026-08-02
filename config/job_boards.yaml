@@ -3,146 +3,21 @@
 # Adding a new board = adding an entry here, not writing new fetch/parse code.
 
 job_boards:
-  # ── Remote-first sources with JD descriptions ───────────────────────
-
-  - name: remoteok
-    enabled: true
-    type: rest_api
-    base_url: "https://remoteok.com/api"
-    auth: none
-    rate_limit_per_min: 30
-    default_remote_type: "remote"
-    field_mapping:
-      id: "$.id"
-      title: "$.position"
-      company: "$.company"
-      location: "$.location"
-      url: "$.url"
-      description: "$.description"
-      remote_type: "$.remote"
-    pagination:
-      type: "none"
-      param: ""
-      max_pages: 1
-
-  - name: remotive
-    enabled: true
-    type: rest_api
-    base_url: "https://remotive.com/api/remote-jobs"
-    auth: none
-    rate_limit_per_min: 30
-    default_remote_type: "remote"
-    field_mapping:
-      id: "$.id"
-      title: "$.title"
-      company: "$.company_name"
-      location: "$.candidate_required_location"
-      url: "$.url"
-      description: "$.description"
-      remote_type: "$.job_type"
-    pagination:
-      type: "none"
-      param: ""
-      max_pages: 1
-
-  - name: jobicy
-    enabled: true
-    type: rest_api
-    base_url: "https://jobicy.com/api/v2/remote-jobs"
-    auth: none
-    rate_limit_per_min: 30
-    default_remote_type: "remote"
-    field_mapping:
-      id: "$.id"
-      title: "$.jobTitle"
-      company: "$.companyName"
-      location: "$.jobGeo"
-      url: "$.url"
-      description: "$.jobDescription"
-      remote_type: "$.jobType"
-    pagination:
-      type: "query_param"
-      param: "count"
-      max_pages: 1
-
-  - name: arbeitnow
-    enabled: true
-    type: rest_api
-    base_url: "https://www.arbeitnow.com/api/job-board-api"
-    auth: none
-    rate_limit_per_min: 30
-    field_mapping:
-      id: "$.id"
-      title: "$.title"
-      company: "$.company_name"
-      location: "$.location"
-      url: "$.url"
-      description: "$.description"
-      remote_type: "$.remote"
-    pagination:
-      type: "query_param"
-      param: "page"
-      max_pages: 3
-
-  - name: himalayas
-    enabled: true
-    type: rest_api
-    base_url: "https://himalayas.app/jobs/api"
-    auth: none
-    rate_limit_per_min: 30
-    default_remote_type: "remote"
-    field_mapping:
-      id: "$.id"
-      title: "$.title"
-      company: "$.company"
-      location: "$.location"
-      url: "$.url"
-      description: "$.description"
-      remote_type: "$.remote"
-    pagination:
-      type: "query_param"
-      param: "offset"
-      max_pages: 2
-
-  # ── India / API-key sources ────────────────────────────────────────
-
-  - name: adzuna
-    enabled: false  # Enable when ADZUNA_API_KEY is set
-    type: rest_api
-    base_url: "https://api.adzuna.com/v1/api/jobs/in/search/1"
-    auth: api_key
-    api_key_env: "ADZUNA_API_KEY"
-    rate_limit_per_min: 25
-    extra_params:
-      results_per_page: "20"
-      what: "ai machine learning"
-    field_mapping:
-      id: "$.id"
-      title: "$.title"
-      company: "$.company.display_name"
-      location: "$.location.display_name"
-      url: "$.redirect_url"
-      description: "$.description"
-    pagination:
-      type: "query_param"
-      param: "page"
-      max_pages: 3
-
   - name: bluedoor
     enabled: true
     type: rest_api
     base_url: "https://api.bluedoor.sh/job-postings/v1/jobs/search"
     auth: api_key
     api_key_env: "BLUEDOOR_API_KEY"
-    rate_limit_per_min: 100
+    rate_limit_per_min: 100  # free tier: 100 req/s, burst 500
     field_mapping:
       id: "$.job_id"
       title: "$.title"
-      company: "$.org_name"
+      company: "$.org_name"       # falls back to provider if empty
       location: "$.city"
       remote_type: "$.remote_policy"
       url: "$.apply_url"
-      description: "$.description"
+      description: "$.description" # falls back to empty if missing
     pagination:
       type: "none"
       param: ""
@@ -166,137 +41,34 @@ job_boards:
       type: "start_offset"
       param: "start"
 
-  # ── Board-specific sources (target-list based) ────────────────────
-  # These require knowing the company's board identifier.
-  # Add your target companies below — each is a config change, not code.
-  #
-  # Multi-company boards (Greenhouse, Lever, Ashby) use company_slugs_env
-  # to expand a comma-separated env var into N parallel fetches.
-  # The url_template field provides the {slug} placeholder for each.
-
-  - name: greenhouse
-    enabled: false  # Enable when GREENHOUSE_BOARD_TOKENS env var is set
+  # Adding a new board = adding an entry here, not writing new fetch/parse code
+  - name: custom_board_example
+    enabled: false
     type: rest_api
-    base_url: "https://boards-api.greenhouse.io/v1/boards/placeholder/jobs"
-    url_template: "https://boards-api.greenhouse.io/v1/boards/{slug}/jobs"
-    company_slugs_env: "GREENHOUSE_BOARD_TOKENS"
-    company_from_slug: true
-    auth: none
+    base_url: "https://example-jobboard.com/api/jobs"
+    auth: api_key
+    api_key_env: "CUSTOM_BOARD_API_KEY"
     rate_limit_per_min: 30
     field_mapping:
-      id: "$.id"
       title: "$.title"
-      company: "$.location.name"
-      location: "$.location.name"
-      url: "$.absolute_url"
-      description: "$.content"
-    pagination:
-      type: "none"
-      param: ""
-      max_pages: 1
-    # Example: GREENHOUSE_BOARD_TOKENS=anthropic,openai,vercel
-
-  - name: lever
-    enabled: false  # Enable when LEVER_POSTING_URLS env var is set
-    type: rest_api
-    base_url: "https://api.lever.co/v0/postings/placeholder"
-    url_template: "https://api.lever.co/v0/postings/{slug}"
-    company_slugs_env: "LEVER_POSTING_URLS"
-    company_from_slug: true
-    auth: none
-    rate_limit_per_min: 30
-    field_mapping:
-      id: "$.id"
-      title: "$.text"
-      company: "$.categories.team"
-      location: "$.categories.location"
-      url: "$.hostedUrl"
-      description: "$.descriptionPlain"
-    pagination:
-      type: "none"
-      param: ""
-      max_pages: 1
-    # Example: LEVER_POSTING_URLS=anthropic,stripe,airbnb
-
-  - name: workday
-    enabled: false  # Enable with WORKDAY_URLS env var (comma-separated)
-    type: rest_api
-    base_url: "https://www.workday.com/wday/cxs/{company}/{site}/jobs"
-    auth: none
-    rate_limit_per_min: 20
-    extra_params:
-      limit: "20"
-      offset: "0"
-    field_mapping:
-      id: "$.bulletFields[0]"
-      title: "$.title"
-      company: "$.locationsText"
-      location: "$.locationsText"
-      url: "$.externalPath"
-      description: "$.jobDescriptionInfo.jobDescription"
-    pagination:
-      type: "offset"
-      param: "offset"
-      step: 20
-      max_pages: 3
-    # Example: WORKDAY_URLS=anthropic/jobs,google/jobs
-
-  - name: ashby
-    enabled: false  # Enable when ASHBY_ORG env var is set
-    type: rest_api
-    base_url: "https://api.ashbyhq.com/posting-api/job-board/placeholder?includeCompensation=true"
-    url_template: "https://api.ashbyhq.com/posting-api/job-board/{slug}?includeCompensation=true"
-    company_slugs_env: "ASHBY_ORG"
-    company_from_slug: true
-    auth: none
-    rate_limit_per_min: 10  # Ashby has ~10s server-side latency + rate limiting
-    fetch_timeout_override: 30  # Ashby needs longer timeout (career-ops pattern)
-    field_mapping:
-      id: "$.id"
-      title: "$.title"
-      company: "$.teamName"
-      location: "$.locationName"
-      url: "$.jobUrl"
-      description: "$.description"
-    pagination:
-      type: "none"
-      param: ""
-      max_pages: 1
-    # Ashby REST endpoint (not GraphQL). ~10s+ server-side latency.
-    # career-ops uses 30s timeout + 2 retries for this provider.
-    # Example: ASHBY_ORG=cohere,langchain,pinecone
-
-  # ── RSS/Atom feed sources ──────────────────────────────────────
-  # Boards that expose RSS feeds instead of JSON APIs.
-  # Adding an RSS source = a YAML entry, not code.
-
-  - name: ai_jobs_net
-    enabled: false  # Enable to scrape AI job boards via RSS
-    type: rss_feed
-    base_url: "https://ai-jobs.net/feed/"
-    auth: none
-    rate_limit_per_min: 20
-    field_mapping:
-      title: "$.title"
+      company: "$.company"
+      location: "$.city"
       url: "$.link"
-      description: "$.description"
-    pagination:
-      type: "none"
-      param: ""
-      max_pages: 1
 
-  - name: remoteok_rss
-    enabled: false  # Enable for RSS fallback when REST API is rate-limited
-    type: rss_feed
-    base_url: "https://remoteok.com/remote-jobs.rss"
+  # Example of an HTML scrape board (CSS selectors instead of field_mapping)
+  - name: naukri_example
+    enabled: false
+    type: html_scrape
+    base_url: "https://www.naukri.com/job-listings"
     auth: none
-    rate_limit_per_min: 20
-    default_remote_type: "remote"
-    field_mapping:
-      title: "$.title"
-      url: "$.link"
-      description: "$.description"
+    rate_limit_per_min: 15
+    css_selectors:
+      listing: "div.jobTuple"
+      title: "a.title"
+      company: "a.subTitle"
+      location: "span.location"
+      url: "a.title"
+      description: "span.job-description"
     pagination:
-      type: "none"
-      param: ""
-      max_pages: 1
+      type: "query_param"
+      param: "page"
