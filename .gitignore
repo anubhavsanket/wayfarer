@@ -1,0 +1,33 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+
+# Env & secrets
+.env
+*.env.local
+
+# Node
+node_modules/
+dist/
+dist-ssr/
+
+# Wayfarer runtime data
+data/uploads/*
+!data/uploads/.gitkeep
+chroma_db/
+cache/
+logs/
+
+# Editor
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Claude Code local settings
+.claude/

@@ -1,0 +1,72 @@
+# Wayfarer — single-command self-hosting
+# `docker compose up` takes a fresh clone from zero to a running instance.
+# Copy .env.example → .env, fill in API keys, then `docker compose up`.
+
+services:
+  api:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    ports:
+      - "8000:8000"
+    # env_file passes ALL keys from .env into the container so Pydantic
+    # Settings can read them. The explicit `environment` block below is
+    # only for compose-internal overrides (hostnames, ports).
+    env_file:
+      - .env
+    environment:
+      - CHROMA_HOST=chromadb
+      - CHROMA_PORT=8000
+      - OLLAMA_ENDPOINT=http://ollama:11434
+      - REDIS_URL=redis://redis:6379
+    depends_on:
+      - chromadb
+      - ollama
+      - redis
+    volumes:
+      - ./data/uploads:/app/data/uploads
+      - ./config:/app/config:ro
+
+  chromadb:
+    # Pinned to match the pip package version in requirements.txt
+    # (chromadb==0.5.23). `latest` is now 1.x and is API-incompatible
+    # with the 0.5.x client.
+    image: chromadb/chroma:0.5.23
+    ports:
+      - "8001:8000"
+    volumes:
+      - chroma_data:/chroma/chroma
+
+  ollama:
+    image: ollama/ollama:latest
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama_data:/root/.ollama
+    # GPU passthrough — omit the `deploy` block entirely on machines without
+    # an NVIDIA GPU; the router falls back to API inference (NIM/OpenRouter).
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    ports:
+      - "3000:3000"
+    depends_on:
+      - api
+
+volumes:
+  chroma_data:
+  ollama_data:

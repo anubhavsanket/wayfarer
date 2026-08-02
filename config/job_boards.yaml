@@ -1,0 +1,68 @@
+# Wayfarer — Job Board Registry
+# Every job source is defined as an entry here, not as bespoke code.
+# Adding a new board = adding an entry here, not writing new fetch/parse code.
+
+job_boards:
+  - name: bluedoor
+    enabled: true
+    type: rest_api
+    base_url: "https://api.bluedoor.sh/v1/postings"
+    auth: none
+    rate_limit_per_min: 60
+    field_mapping:
+      title: "$.job_title"
+      company: "$.employer_name"
+      location: "$.location.city"
+      remote_type: "$.location.remote"
+      url: "$.apply_url"
+      description: "$.description_text"
+    pagination:
+      type: "offset"
+      param: "page"
+
+  - name: linkedin_guest
+    enabled: true
+    type: rest_api
+    base_url: "https://www.linkedin.com/jobs-guest/jobs/api/seeMoreJobPostings/search"
+    auth: none
+    rate_limit_per_min: 20
+    field_mapping:
+      title: "$.title"
+      company: "$.company.name"
+      location: "$.formattedLocation"
+      url: "$.jobPostingUrl"
+    pagination:
+      type: "start_offset"
+      param: "start"
+
+  # Adding a new board = adding an entry here, not writing new fetch/parse code
+  - name: custom_board_example
+    enabled: false
+    type: rest_api
+    base_url: "https://example-jobboard.com/api/jobs"
+    auth: api_key
+    api_key_env: "CUSTOM_BOARD_API_KEY"
+    rate_limit_per_min: 30
+    field_mapping:
+      title: "$.title"
+      company: "$.company"
+      location: "$.city"
+      url: "$.link"
+
+  # Example of an HTML scrape board (CSS selectors instead of field_mapping)
+  - name: naukri_example
+    enabled: false
+    type: html_scrape
+    base_url: "https://www.naukri.com/job-listings"
+    auth: none
+    rate_limit_per_min: 15
+    css_selectors:
+      listing: "div.jobTuple"
+      title: "a.title"
+      company: "a.subTitle"
+      location: "span.location"
+      url: "a.title"
+      description: "span.job-description"
+    pagination:
+      type: "query_param"
+      param: "page"

@@ -1,0 +1,140 @@
+import { useState } from "react";
+import { useMutation } from "@tanstack/react-query";
+import { Upload, FileText } from "lucide-react";
+
+import { api } from "@/lib/api";
+import type { ResumeCheckResponse } from "@/lib/types";
+import { Button } from "@/components/ui/button";
+import { Card } from "@/components/ui/card";
+
+function tierColor(tier: string) {
+  if (tier === "verified") return "bg-green-100 text-green-800";
+  if (tier === "reworded") return "bg-yellow-100 text-yellow-800";
+  return "bg-red-100 text-red-800";
+}
+
+export default function ResumeCheckPage() {
+  const [resumeFile, setResumeFile] = useState<File | null>(null);
+  const [jdText, setJdText] = useState("");
+  const [result, setResult] = useState<ResumeCheckResponse | null>(null);
+
+  const mutation = useMutation({
+    mutationFn: ({ file, jd }: { file: File; jd: string }) =>
+      api.resumeCheck(file, jd),
+    onSuccess: (data) => {
+      setResult(data);
+      if (data.resume_id) {
+        localStorage.setItem("resume_id", data.resume_id);
+      }
+    },
+  });
+
+  return (
+    <div className="space-y-6">
+      <Card className="p-6">
+        <h2 className="mb-4 text-lg font-semibold">ATS Resume Checker</h2>
+        <p className="mb-4 text-sm text-muted-foreground">
+          Upload your resume and paste a JD to get ATS compatibility scores
+          with confidence-tiered redline suggestions.
+        </p>
+
+        <div className="mb-4 space-y-3">
+          <label className="flex cursor-pointer items-center gap-2 rounded-md border border-dashed p-4 text-sm text-muted-foreground hover:bg-muted">
+            <Upload className="h-4 w-4" />
+            {resumeFile ? resumeFile.name : "Upload resume (PDF/DOCX)"}
+            <input
+              type="file"
+              accept=".pdf,.docx"
+              className="hidden"
+              onChange={(e) => setResumeFile(e.target.files?.[0] ?? null)}
+            />
+          </label>
+          <textarea
+            value={jdText}
+            onChange={(e) => setJdText(e.target.value)}
+            rows={6}
+            placeholder="Paste job description here..."
+            className="w-full rounded-md border bg-background px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-ring"
+          />
+        </div>
+
+        <Button
+          disabled={!resumeFile || !jdText.trim() || mutation.isPending}
+          onClick={() => {
+            if (resumeFile && jdText.trim())
+              mutation.mutate({ file: resumeFile, jd: jdText.trim() });
+          }}
+        >
+          <FileText className="mr-2 h-4 w-4" />
+          {mutation.isPending ? "Checking..." : "Check Resume"}
+        </Button>
+      </Card>
+
+      {mutation.isError && (
+        <Card className="border-destructive p-4 text-sm text-destructive">
+          Error: {mutation.error.message}
+        </Card>
+      )}
+
+      {result && (
+        <>
+          <Card className="p-6">
+            <h3 className="mb-1 font-medium">ATS Score</h3>
+            <p className="text-3xl font-bold">
+              {(result.ats_score * 100).toFixed(0)}%
+            </p>
+          </Card>
+
+          {result.structural_issues.length > 0 && (
+            <Card className="p-6">
+              <h3 className="mb-3 font-medium">Structural Issues</h3>
+              <ul className="space-y-1 text-sm">
+                {result.structural_issues.map((issue, i) => (
+                  <li key={i} className="flex gap-2">
+                    <span className="font-mono text-xs text-muted-foreground">
+                      {issue.location}
+                    </span>
+                    <span>{issue.issue}</span>
+                  </li>
+                ))}
+              </ul>
+            </Card>
+          )}
+
+          {result.keyword_gaps.length > 0 && (
+            <Card className="p-6">
+              <h3 className="mb-3 font-medium">Keyword Analysis</h3>
+              <ul className="space-y-3">
+                {result.keyword_gaps.map((gap, i) => (
+                  <li key={i} className="text-sm">
+                    <div className="mb-1 flex items-center gap-2">
+                      <span className="font-medium">{gap.keyword}</span>
+                      <span className={`rounded px-1.5 py-0.5 text-xs font-medium ${tierColor(gap.tier)}`}>
+                        {gap.tier}
+                      </span>
+                      {gap.confidence != null && (
+                        <span className="text-xs text-muted-foreground">
+                          {(gap.confidence * 100).toFixed(0)}%
+                        </span>
+                      )}
+                    </div>
+                    {gap.rationale && (
+                      <p className="pl-4 text-xs text-muted-foreground">
+                        {gap.rationale}
+                      </p>
+                    )}
+                    {gap.suggested_text && (
+                      <p className="mt-1 whitespace-pre-wrap pl-4 text-xs italic text-primary">
+                        → {gap.suggested_text}
+                      </p>
+                    )}
+                  </li>
+                ))}
+              </ul>
+            </Card>
+          )}
+        </>
+      )}
+    </div>
+  );
+}
