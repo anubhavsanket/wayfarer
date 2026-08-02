@@ -135,7 +135,7 @@ wayfarer/
 │   │   │   └── legitimacy.py         # Ghost / no-sponsorship checks
 │   │   └── utils/
 │   │       └── cache.py        # Content-hash memoization
-│   ├── tests/                  # pytest suite (35 tests, all passing)
+│   ├── tests/                  # pytest suite (36 tests, all passing)
 │   ├── requirements.txt
 │   ├── pytest.ini
 │   └── Dockerfile
@@ -193,15 +193,20 @@ This starts five services:
 | `redis` | 6379 | Background job queue (Stage 3 refresh) |
 | `frontend` | 3000 | React UI served by nginx |
 
-First boot will pull all images. The embedding model is **not** auto-pulled — one
-manual step the first time:
+First boot will pull all images. The embedding and chat models are **not**
+auto-pulled — two manual steps the first time:
 
 ```bash
+# Pull the embedding model (required for all stages)
 docker compose exec ollama ollama pull nomic-embed-text
+
+# Pull the chat model (required for LLM synthesis when using Ollama)
+docker compose exec ollama ollama pull llama3.2:3b
 ```
 
-(Embeddings won't work until this is done; the API reports `ollama: down` in
-`/health` until the model is present.)
+> **Important:** Do NOT put spaces after `=` in `.env` — e.g.
+> `NVIDIA_NIM_API_KEY=nvapi-XXXX` is correct, but
+> `NVIDIA_NIM_API_KEY= nvapi-XXXX` will silently break the API key.
 
 ### 3. Verify it's up
 
@@ -240,10 +245,14 @@ python3.11 -m venv .venv
 ./.venv/Scripts/python.exe -m pip install -r requirements.txt
 ```
 
-### 2. (Optional) pull the local embedding model
+### 2. (Optional) pull local models
 
 ```bash
+# Embedding model (required for all stages)
 ollama pull nomic-embed-text
+
+# Chat model (required for LLM synthesis when using Ollama)
+ollama pull llama3.2:3b
 ```
 
 ### 3. (Optional) point at a remote ChromaDB / Ollama
@@ -302,14 +311,15 @@ Configuration is layered:
 
 | Variable | Purpose | Required for |
 |---|---|---|
-| `NVIDIA_NIM_API_KEY` | NVIDIA NIM free-tier router | Stage 2/3 inference |
-| `OPENROUTER_API_KEY` | OpenRouter free-tier router | Stage 2/3 inference fallback |
+| `LLM_PROVIDER` | Primary LLM provider | `nvidia` / `openrouter` / `ollama` |
+| `NVIDIA_NIM_API_KEY` | NVIDIA NIM free-tier router | When `LLM_PROVIDER=nvidia` |
+| `OPENROUTER_API_KEY` | OpenRouter free-tier router | When `LLM_PROVIDER=openrouter` |
 | `TAVILY_API_KEY` | Search API (primary) | Stage 1 |
 | `BRAVE_API_KEY` | Search API (fallback) | Stage 1 if Tavily missing |
 
-At least **one** of `NVIDIA_NIM_API_KEY` or `OPENROUTER_API_KEY` should be set so
-inference works. Ollama local can be used without any of them, but it's slower
-and quality depends on model size.
+When `LLM_PROVIDER=ollama` (default), no API keys are needed — everything
+runs locally via Ollama. The router always falls back through the other
+providers if the primary one fails.
 
 ### Optional overrides
 
@@ -452,6 +462,10 @@ Rank live postings by fit against the resume's `resume_id`.
 | `location_mode` | enum | `specific_city` | `specific_city` / `remote_only` / `hybrid` / `open_to_relocation` |
 | `cities` | csv string | `""` | comma-separated; used for `specific_city` and `open_to_relocation` |
 | `remote_ok` | bool | false | include remote postings alongside city matches |
+| `test` | bool | false | return mock sample data (skip live board APIs) |
+
+> Use `?test=true` to see the Job Match UI with realistic sample data when
+> board APIs are unavailable or broken.
 
 ```bash
 curl "http://localhost:8000/api/v1/jobs/match?resume_id=abc123def456&limit=20&location_mode=specific_city&cities=bengaluru&remote_ok=true"
@@ -589,10 +603,13 @@ PRD §12, every stage is built with cost in mind:
 
 - **VRAM ceiling** — keep embeddings + any local LLM under 4 GB total. Phrase
   prompts are routed via the LLM Router (API-side); only embeddings stay local.
-- **`bluedoor.sh` is US-focused** — for a Bengaluru-relevant demo, frame it
-  around remote/global roles, or supplement with an India-specific board.
-- **LinkedIn guest endpoints** are subject to LinkedIn's anti-scraping; keep
-  volume low and personal-use only.
+- **`bluedoor.sh` API may be broken** — their endpoint returned 404 during
+  testing (August 2026). The board registry is designed for resilience; update
+  `config/job_boards.yaml` with the current endpoint when it recovers. Use
+  `?test=true` on `/jobs/match` for mock data in the meantime.
+- **LinkedIn guest endpoints** return HTML rather than structured JSON for
+  most queries; the connector handles this gracefully (falls back to empty).
+  Keep volume low and personal-use only.
 - **No native `.docx` track-changes export in v1** — the redline view is
   HTML/artifact-style; OOXML track-changes is a v2 stretch.
 - **Python 3.11 / 3.12 only** — pinned deps don't build on 3.14.
