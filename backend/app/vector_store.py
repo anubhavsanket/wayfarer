@@ -135,25 +135,32 @@ class VectorStore:
             else [self._content_hash(d) for d in docs]
         )
         meta_list = list(metadatas) if metadatas is not None else None
-        # Split into ids that already exist vs. new (upsert does this anyway,
-        # but doing it explicitly lets us log dedup hits).
-        existing = set(col.get(ids=doc_ids, include=[])["ids"])
-        fresh = [i for i in doc_ids if i not in existing]
-        if existing:
+
+        # ChromaDB rejects duplicate IDs in a single request — deduplicate
+        seen: set[str] = set()
+        unique_docs, unique_ids, unique_meta = [], [], []
+        for i, doc_id in enumerate(doc_ids):
+            if doc_id in seen:
+                continue
+            seen.add(doc_id)
+            unique_docs.append(docs[i])
+            unique_ids.append(doc_id)
+            if meta_list is not None:
+                unique_meta.append(meta_list[i])
+
+        # Log how many were deduplicated
+        skipped = len(doc_ids) - len(unique_ids)
+        if skipped:
             logger.debug(
-                "Collection %s: %d/%d documents were duplicates (skipped)",
-                collection, len(existing), len(doc_ids),
+                "Collection %s: %d/%d documents were duplicate IDs (skipped)",
+                collection, skipped, len(doc_ids),
             )
-        if fresh:
-            fresh_idx = [doc_ids.index(i) for i in fresh]
+
+        if unique_docs:
             col.upsert(
-                ids=fresh,
-                documents=[docs[i] for i in fresh_idx],
-                metadatas=(
-                    [meta_list[i] for i in fresh_idx]
-                    if meta_list is not None
-                    else None
-                ),
+                ids=unique_ids,
+                documents=unique_docs,
+                metadatas=unique_meta if unique_meta else None,
             )
         return doc_ids
 

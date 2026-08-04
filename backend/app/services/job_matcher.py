@@ -77,6 +77,29 @@ def _dedupe_postings(postings: list[JobPosting]) -> list[JobPosting]:
     return out
 
 
+def _normalise_postings(postings: list[JobPosting]) -> list[JobPosting]:
+    """Normalise status/location fields across sources — FR3.9."""
+    for p in postings:
+        # Normalise remote_type across sources
+        p.remote_type = _normalise_remote_type(p.remote_type)
+        # Normalise location strings (trim, title-case)
+        if p.location:
+            p.location = p.location.strip().title()
+    return postings
+
+
+def _drop_stale(postings: list[JobPosting], ttl_days: int = 30) -> list[JobPosting]:
+    """Drop postings whose ``fetched_at`` is older than ``ttl_days`` — FR3.9."""
+    from datetime import datetime, timezone, timedelta
+    cutoff = datetime.now(timezone.utc) - timedelta(days=ttl_days)
+    before = len(postings)
+    out = [p for p in postings if p.fetched_at >= cutoff]
+    dropped = before - len(out)
+    if dropped:
+        logger.info("Dropped %d stale postings (older than %d days)", dropped, ttl_days)
+    return out
+
+
 def _normalise_remote_type(raw: str | None) -> str:
     """Normalise a remote_type string into '', 'remote', 'hybrid', or 'onsite'."""
     if not raw:
@@ -224,7 +247,16 @@ def _apply_location_preference(
             m.location_match = LocationMatch.REMOTE
 
         elif mode == LocationMode.SPECIFIC_CITY:
-            if city_matches(m):
+            if not cities:
+                # No city constraint — accept all postings (mark as exact if
+                # remote_ok or not remote; otherwise mark as relocation required)
+                if is_remote and remote_ok:
+                    m.location_match = LocationMatch.REMOTE
+                elif is_remote:
+                    m.location_match = LocationMatch.REMOTE
+                else:
+                    m.location_match = LocationMatch.RELOCATION_REQUIRED
+            elif city_matches(m):
                 m.location_match = LocationMatch.EXACT
             elif is_remote and remote_ok:
                 m.location_match = LocationMatch.REMOTE
@@ -294,16 +326,20 @@ async def match_jobs(
     if not parsed.bullets:
         raise ValueError("Resume has no parseable bullets — cannot match.")
 
-    # 1. Discovery + dedup (zero-token)
+    # 1. Discovery + dedup + normalise + drop stale (zero-token)
     postings = _dedupe_postings(await _discover_postings())
     if not postings:
         return JobMatchResponse(matches=[], aggregate_gaps=[])
+    postings = _normalise_postings(postings)
+    postings = _drop_stale(postings)
+    logger.info("After pipeline cleanup: %d postings", len(postings))
 
     # 2. Embedding similarity (rank all, keep top-K)
     resume_vec = await _embed_resume(parsed)
     scored = await _compute_semantic_scores(resume_vec, postings)
     scored.sort(key=lambda t: t[1], reverse=True)
     top_k = scored[:TOP_K_EMBEDDING_SURVIVORS]
+    logger.info("Top-K after semantic score: %d postings (of %d total)", len(top_k), len(scored))
 
     # 3. LLM keyword overlap on top-K only (cost control)
     matches: list[JobMatch] = []

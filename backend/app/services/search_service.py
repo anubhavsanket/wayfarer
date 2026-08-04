@@ -119,12 +119,15 @@ async def _fetch_and_cache(items: list[SearchResultItem]) -> dict[str, FetchResu
                     "fetched_at": datetime.now(timezone.utc).isoformat(),
                 })
         if fresh_docs:
-            store.upsert(
-                SEARCH_CACHE_COLLECTION,
-                fresh_docs,
-                ids=fresh_ids,
-                metadatas=fresh_metas,
-            )
+            try:
+                store.upsert(
+                    SEARCH_CACHE_COLLECTION,
+                    fresh_docs,
+                    ids=fresh_ids,
+                    metadatas=fresh_metas,
+                )
+            except Exception as exc:
+                logger.warning("Fetch cache write failed: %s", exc)
         for fr in fetched:
             results[fr.url] = fr
 
@@ -275,16 +278,21 @@ async def search(query: str, max_sources: int = 5) -> SearchResponse:
 
     # 6. Cache the final answer (query hash → answer + sub-queries used)
     # Skip caching fallback answers — they're not useful as cached results.
+    # Wrap in try/except: if Ollama isn't reachable for embedding, skip
+    # caching rather than crashing the whole request.
     if synthesized:
-        store.upsert(
-            SEARCH_CACHE_COLLECTION,
-            [answer],
-            ids=[cache_key],
-            metadatas=[{
-                "sub_queries": ",".join(sub_queries),
-                "answer_at": datetime.now(timezone.utc).isoformat(),
-            }],
-        )
+        try:
+            store.upsert(
+                SEARCH_CACHE_COLLECTION,
+                [answer],
+                ids=[cache_key],
+                metadatas=[{
+                    "sub_queries": ",".join(sub_queries),
+                    "answer_at": datetime.now(timezone.utc).isoformat(),
+                }],
+            )
+        except Exception as exc:
+            logger.warning("Cache write failed (embedding unavailable): %s", exc)
 
     return SearchResponse(
         answer=answer,

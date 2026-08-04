@@ -1,9 +1,10 @@
 import { useState } from "react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@radix-ui/react-tabs";
-import { Search, FileText, Briefcase } from "lucide-react";
+import { Search, FileText, Briefcase, Settings } from "lucide-react";
 import SearchPage from "./pages/Search";
 import ResumeCheckPage from "./pages/ResumeCheck";
 import JobMatchPage from "./pages/JobMatch";
+import SettingsPage from "./pages/Settings";
 
 export default function App() {
   const [tab, setTab] = useState("search");
@@ -48,6 +49,13 @@ export default function App() {
               <Briefcase className="h-4 w-4" />
               Job Match
             </TabsTrigger>
+            <TabsTrigger
+              value="settings"
+              className="inline-flex items-center gap-2 rounded-md px-4 py-2 text-sm font-medium transition-colors data-[state=active]:bg-background data-[state=active]:text-foreground data-[state=active]:shadow-sm"
+            >
+              <Settings className="h-4 w-4" />
+              Settings
+            </TabsTrigger>
           </TabsList>
 
           <TabsContent value="search">
@@ -58,6 +66,9 @@ export default function App() {
           </TabsContent>
           <TabsContent value="jobs">
             <JobMatchPage />
+          </TabsContent>
+          <TabsContent value="settings">
+            <SettingsPage />
           </TabsContent>
         </Tabs>
       </main>

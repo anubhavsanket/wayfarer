@@ -15,6 +15,7 @@ from datetime import datetime, timezone
 from typing import Any, Literal
 
 import httpx
+import re
 import yaml
 from pydantic import BaseModel, Field
 
@@ -65,6 +66,7 @@ class JobBoardEntry(BaseModel):
     css_selectors: CSSSelectors = Field(default_factory=CSSSelectors)
     pagination: PaginationConfig = Field(default_factory=PaginationConfig)
     extra_params: dict[str, str] = Field(default_factory=dict)
+    extra_headers: dict[str, str] = Field(default_factory=dict)
 
 
 class JobBoardRegistry(BaseModel):
@@ -158,7 +160,7 @@ class JobBoardConnector:
         pages: int | None,
     ) -> list[JobPosting]:
         postings: list[JobPosting] = []
-        headers: dict[str, str] = {}
+        headers: dict[str, str] = dict(board.extra_headers)
         api_key = _get_api_key(board)
         if api_key:
             headers["Authorization"] = f"Bearer {api_key}"
@@ -187,16 +189,22 @@ class JobBoardConnector:
                     board.base_url, params=params, headers=headers,
                 )
                 resp.raise_for_status()
-                data = resp.json()
+
+                # Handle HTML responses (LinkedIn guest API returns HTML, not JSON)
+                content_type = resp.headers.get("content-type", "")
+                if "text/html" in content_type:
+                    items = self._parse_html_postings(resp.text, board)
+                    logger.info("Parsed %d postings from HTML for %s", len(items), board.name)
+                else:
+                    data = resp.json()
+                    items = data if isinstance(data, list) else data.get("results", data.get("data", []))
+
             except (httpx.HTTPStatusError, httpx.TimeoutException, httpx.DecodingError) as exc:
                 logger.warning("Failed to fetch from %s: %s", board.name, exc)
                 break
 
-            # data may be a list directly or wrapped in a key
-            items: list[dict[str, Any]] = (
-                data if isinstance(data, list) else data.get("results", data.get("data", []))
-            )
             if not items:
+                logger.info("No items from %s (page %d), stopping", board.name, page_num)
                 break
 
             for item in items:
@@ -209,6 +217,52 @@ class JobBoardConnector:
                 value += pag.step
             else:
                 value += pag.step
+
+        return postings
+
+    def _parse_html_postings(self, html: str, board: JobBoardEntry) -> list[dict[str, Any]]:
+        """Parse LinkedIn-style HTML job cards into a list of dicts."""
+        postings = []
+
+        # Extract job titles from <span class="sr-only"> tags
+        titles = re.findall(r'<span class="sr-only">\s*(.*?)\s*</span>', html, re.DOTALL)
+        titles = [t.strip() for t in titles if t.strip()]
+
+        # Extract URLs from href attributes
+        urls = re.findall(
+            r'href="(https://[a-z.]*linkedin\.com/jobs/view/[^"]+)"', html
+        )
+
+        # Extract company names (strip HTML tags)
+        company_blocks = re.findall(
+            r'<h4 class="base-search-card__subtitle">(.*?)</h4>', html, re.DOTALL
+        )
+        companies = []
+        for block in company_blocks:
+            # Extract text content from <a> tag, stripping all HTML
+            text = re.sub(r"<[^>]+>", "", block)
+            text = " ".join(text.split()).strip()
+            if text:
+                companies.append(text)
+
+        # Extract locations
+        locations = re.findall(
+            r'<span class="job-search-card__location">(.*?)</span>', html, re.DOTALL
+        )
+        locations = [l.strip() for l in locations if l.strip()]
+
+        # Build posting dicts
+        for i in range(min(len(titles), len(urls))):
+            postings.append({
+                "job_id": titles[i] if i < len(titles) else "",
+                "title": titles[i] if i < len(titles) else "",
+                "apply_url": urls[i] if i < len(urls) else "",
+                "org_name": companies[i] if i < len(companies) else "Unknown",
+                "city": locations[i] if i < len(locations) else "",
+                "remote_policy": "",
+                "description": "",
+                "provider": "linkedin_guest",
+            })
 
         return postings
 

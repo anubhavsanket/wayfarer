@@ -29,11 +29,14 @@ job_boards:
     base_url: "https://www.linkedin.com/jobs-guest/jobs/api/seeMoreJobPostings/search"
     auth: none
     rate_limit_per_min: 20
+    extra_headers:
+      User-Agent: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36"
+      Accept: "text/html"
     field_mapping:
       title: "$.title"
-      company: "$.company.name"
-      location: "$.formattedLocation"
-      url: "$.jobPostingUrl"
+      company: "$.org_name"
+      location: "$.city"
+      url: "$.apply_url"
     pagination:
       type: "start_offset"
       param: "start"

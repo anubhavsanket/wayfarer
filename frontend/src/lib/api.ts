@@ -4,12 +4,17 @@ import type {
   ResumeCheckResponse,
   SearchResponse,
 } from "./types";
+import { buildAuthHeaders } from "@/stores/settings";
 
 const API_BASE = import.meta.env.VITE_API_BASE ?? "";
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(`${API_BASE}${path}`, {
-    headers: { "Content-Type": "application/json", ...init?.headers },
+    headers: {
+      "Content-Type": "application/json",
+      ...buildAuthHeaders(),
+      ...init?.headers,
+    },
     ...init,
   });
   if (!res.ok) {
@@ -36,6 +41,7 @@ export const api = {
     form.append("jd_text", jdText);
     return fetch(`${API_BASE}/api/v1/resume/check`, {
       method: "POST",
+      headers: buildAuthHeaders(),
       body: form,
     }).then((r) => r.json() as Promise<ResumeCheckResponse>);
   },

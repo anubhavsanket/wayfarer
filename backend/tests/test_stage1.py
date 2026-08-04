@@ -87,17 +87,17 @@ async def test_decompose_query_falls_back_when_no_llm():
 # /search endpoint with no API keys
 # ---------------------------------------------------------------------------
 
-def test_search_endpoint_returns_graceful_error_when_no_keys(client):
-    """With no Tavily/Brave keys, /search should return a clear message
-    rather than a 500."""
+def test_search_endpoint_returns_valid_response(client):
+    """Search endpoint returns a valid response structure — either a real
+    answer (when API keys are configured) or a graceful fallback message
+    (when no keys are set). Both are valid 200 responses."""
     resp = client.post("/api/v1/search", json={"query": "test query", "max_sources": 3})
     assert resp.status_code == 200
     data = resp.json()
-    # Either we got a graceful 'no results' answer, or the pipeline
-    # short-circuited with the no-API-key message
     assert "answer" in data
     assert "citations" in data
     assert "sub_queries_used" in data
+    assert len(data["answer"]) > 0
 
 
 def test_search_endpoint_validates_query(client):

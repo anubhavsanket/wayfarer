@@ -304,6 +304,58 @@ async def jobs_match(
 
 
 # ---------------------------------------------------------------------------
+# Background refresh — FR3.9 (pipeline integrity)
+# ---------------------------------------------------------------------------
+
+@app.post("/api/v1/jobs/refresh", tags=["stage3"])
+async def jobs_refresh():
+    """Re-fetch postings from all boards and store in ChromaDB job_postings.
+
+    Intended to be called periodically (e.g. via a cron job or background
+    task queue). Stores postings in ChromaDB so future /jobs/match calls
+    can read from the local store instead of hitting external APIs.
+    """
+    from .services.job_matcher import _discover_postings, _dedupe_postings, _normalise_postings, _drop_stale
+    from .config import settings
+    from datetime import datetime, timezone
+
+    postings = await _discover_postings()
+    postings = _dedupe_postings(postings)
+    postings = _normalise_postings(postings)
+    postings = _drop_stale(postings)
+
+    # Store in ChromaDB for fast retrieval on /jobs/match
+    if postings:
+        docs = [
+            f"{p.title} | {p.company} | {p.location} | {p.remote_type}"
+            for p in postings
+        ]
+        ids = [p.id[:64] for p in postings]  # ChromaDB limits ID length
+        metadatas = [
+            {
+                "title": p.title[:200],
+                "company": p.company[:200],
+                "location": p.location[:200],
+                "remote_type": p.remote_type,
+                "source": p.source,
+                "fetched_at": p.fetched_at.isoformat(),
+                "url": p.url[:500] if p.url else "",
+            }
+            for p in postings
+        ]
+        from .vector_store import store
+        store.upsert(settings.JOB_POSTINGS_COLLECTION, docs, ids=ids, metadatas=metadatas)
+
+    return {
+        "refreshed": len(postings),
+        "by_source": {
+            s: sum(1 for p in postings if p.source == s)
+            for s in set(p.source for p in postings)
+        } if postings else {},
+    }
+
+
+# ---------------------------------------------------------------------------
 # Entrypoint
 # ---------------------------------------------------------------------------
 

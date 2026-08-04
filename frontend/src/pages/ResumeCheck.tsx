@@ -104,7 +104,7 @@ export default function ResumeCheckPage() {
           {result.keyword_gaps.length > 0 && (
             <Card className="p-6">
               <h3 className="mb-3 font-medium">Keyword Analysis</h3>
-              <ul className="space-y-3">
+              <ul className="space-y-4">
                 {result.keyword_gaps.map((gap, i) => (
                   <li key={i} className="text-sm">
                     <div className="mb-1 flex items-center gap-2">
@@ -123,11 +123,27 @@ export default function ResumeCheckPage() {
                         {gap.rationale}
                       </p>
                     )}
-                    {gap.suggested_text && (
+                    {/* Side-by-side redline view when both original and suggested exist */}
+                    {gap.original_text && gap.suggested_text ? (
+                      <div className="mt-2 ml-4 grid grid-cols-2 gap-2 rounded-md border p-3 text-xs">
+                        <div>
+                          <span className="mb-1 block font-medium text-destructive">Original</span>
+                          <p className="whitespace-pre-wrap text-muted-foreground line-through">
+                            {gap.original_text}
+                          </p>
+                        </div>
+                        <div>
+                          <span className="mb-1 block font-medium text-green-700">Suggested</span>
+                          <p className="whitespace-pre-wrap text-green-700">
+                            {gap.suggested_text}
+                          </p>
+                        </div>
+                      </div>
+                    ) : gap.suggested_text ? (
                       <p className="mt-1 whitespace-pre-wrap pl-4 text-xs italic text-primary">
                         → {gap.suggested_text}
                       </p>
-                    )}
+                    ) : null}
                   </li>
                 ))}
               </ul>
