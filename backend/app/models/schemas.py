@@ -112,6 +112,22 @@ class JobMatchRequest(BaseModel):
     location_preference: LocationPreference = Field(default_factory=LocationPreference)
 
 
+class ExperienceLevel(str, Enum):
+    FRESHER = "fresher"
+    JUNIOR = "junior"
+    MID = "mid"
+    SENIOR = "senior"
+    UNCLEAR = "unclear"
+
+
+class EmploymentType(str, Enum):
+    FULL_TIME = "full_time"
+    CONTRACT = "contract"
+    FREELANCE = "freelance"
+    PART_TIME = "part_time"
+    UNCLEAR = "unclear"
+
+
 class JobMatch(BaseModel):
     job_id: str
     title: str
@@ -126,6 +142,9 @@ class JobMatch(BaseModel):
         default_factory=list,
         description="Legitimacy flags: ghost/vague/unknown_company/sponsorship",
     )
+    experience_level: ExperienceLevel = ExperienceLevel.UNCLEAR
+    min_experience_years: float | None = None
+    employment_type: EmploymentType = EmploymentType.UNCLEAR
 
 
 class AggregateGap(BaseModel):
@@ -135,6 +154,7 @@ class AggregateGap(BaseModel):
 
 class JobMatchResponse(BaseModel):
     matches: list[JobMatch]
+    unclear_matches: list[JobMatch] = Field(default_factory=list)
     aggregate_gaps: list[AggregateGap]
 
 

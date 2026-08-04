@@ -21,10 +21,12 @@ import logging
 from typing import Any
 
 from ..config import settings
-from ..llm_router import router
+from ..llm_router import extract_json, router
 from ..models.job_boards import JobBoardConnector, load_registry
 from ..models.schemas import (
     AggregateGap,
+    EmploymentType,
+    ExperienceLevel,
     JobMatch,
     JobMatchResponse,
     JobPosting,
@@ -173,6 +175,54 @@ async def _compute_keyword_overlap(
     return overlap, missing
 
 
+# ---------------------------------------------------------------------------
+# Fresher Mode: experience level + employment type classification (§15.1/15.2)
+# ---------------------------------------------------------------------------
+
+VALID_LEVELS = {"fresher", "junior", "mid", "senior", "unclear"}
+VALID_EMPLOYMENT_TYPES = {"full_time", "contract", "freelance", "part_time", "unclear"}
+
+_CLASSIFICATION_PROMPT = """\
+Classify this job posting. Return ONLY a JSON object with these fields:
+- experience_level: "fresher" | "junior" | "mid" | "senior" | "unclear"
+- min_experience_years: float or null
+- confidence: float between 0.0 and 1.0
+
+Rules:
+- "fresher": 0-1 years, entry-level, graduate, freshers welcome
+- "junior": 1-3 years
+- "mid": 3-5 years
+- "senior": 5+ years, lead, principal, staff
+- "unclear": no clear experience requirement stated
+
+Job posting:
+{text}
+"""
+
+
+async def _classify_experience(jd_text: str) -> dict[str, Any]:
+    """Classify experience level using a small local LLM (qwen3:0.6b)."""
+    VALID_LEVELS = {"fresher", "junior", "mid", "senior", "unclear"}
+    try:
+        resp = await router.chat(
+            messages=[{"role": "user", "content": _CLASSIFICATION_PROMPT.format(text=jd_text[:1500])}],
+            model="qwen3:0.6b",
+            max_tokens=150,
+        )
+        result = extract_json(resp["content"])
+        level = result.get("experience_level", "unclear")
+        if level not in VALID_LEVELS:
+            level = "unclear"
+        return {
+            "experience_level": level,
+            "min_experience_years": result.get("min_experience_years"),
+            "confidence": result.get("confidence", 0.0),
+        }
+    except Exception as exc:
+        logger.debug("Experience classification failed: %s", exc)
+        return {"experience_level": "unclear", "min_experience_years": None, "confidence": 0.0}
+
+
 async def _match_one(
     posting: JobPosting,
     parsed: Any,
@@ -192,6 +242,9 @@ async def _match_one(
     flag_dicts = check_posting(posting, needs_sponsorship=False)
     flags = [f["kind"] for f in flag_dicts]
 
+    # Fresher Mode: classify experience level (§15.1)
+    exp_class = await _classify_experience(posting.description or posting.title)
+
     return JobMatch(
         job_id=posting.id,
         title=posting.title,
@@ -203,6 +256,8 @@ async def _match_one(
         top_gaps=top_gaps,
         apply_url=posting.url,
         flags=flags,
+        experience_level=ExperienceLevel(exp_class["experience_level"]),
+        min_experience_years=exp_class["min_experience_years"],
     )
 
 
@@ -314,8 +369,14 @@ async def match_jobs(
     resume_id: str,
     location_preference: LocationPreference | None = None,
     limit: int = 20,
+    fresher_only: bool = False,
 ) -> JobMatchResponse:
-    """Rank live postings by fit against a resume, with location filtering."""
+    """Rank live postings by fit against a resume, with location filtering.
+
+    When ``fresher_only=True`` (§15.1), only postings classified as "fresher"
+    or "junior" are surfaced in ``matches``. Postings classified as "unclear"
+    go into ``unclear_matches`` so they aren't silently dropped.
+    """
     pref = location_preference or LocationPreference()
     limit = min(limit, 100)
 
@@ -350,10 +411,23 @@ async def match_jobs(
     # 4. Location filter + re-rank
     matches = _apply_location_preference(matches, pref)
 
-    # 5. Aggregate gaps across the matched set
+    # 5. Fresher Mode: separate confirmed vs unclear (§15.1)
+    unclear_matches: list[JobMatch] = []
+    if fresher_only:
+        confirmed = []
+        for m in matches:
+            if m.experience_level in (ExperienceLevel.FRESHER, ExperienceLevel.JUNIOR):
+                confirmed.append(m)
+            elif m.experience_level == ExperienceLevel.UNCLEAR:
+                unclear_matches.append(m)
+            # mid/senior silently excluded in fresher mode
+        matches = confirmed
+
+    # 6. Aggregate gaps across the matched set
     aggregate_gaps = _aggregate_gaps(matches)
 
     return JobMatchResponse(
         matches=matches[:limit],
+        unclear_matches=unclear_matches[:limit],
         aggregate_gaps=aggregate_gaps,
     )

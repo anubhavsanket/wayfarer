@@ -47,8 +47,8 @@ export const api = {
   },
 
   // Stage 3 — Job matching
-  jobsMatch: (resumeId: string, limit = 20, test = false) =>
+  jobsMatch: (resumeId: string, limit = 20, test = false, fresherOnly = false) =>
     request<JobMatchResponse>(
-      `/api/v1/jobs/match?resume_id=${resumeId}&limit=${limit}${test ? "&test=true" : ""}`
+      `/api/v1/jobs/match?resume_id=${resumeId}&limit=${limit}${test ? "&test=true" : ""}${fresherOnly ? "&fresher_only=true" : ""}`
     ),
 };

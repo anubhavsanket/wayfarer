@@ -250,6 +250,7 @@ async def jobs_match(
     location_mode: LocationMode = LocationMode.SPECIFIC_CITY,
     cities: str = Query(default="", description="Comma-separated cities"),
     remote_ok: bool = False,
+    fresher_only: bool = Query(default=False, description="Filter to fresher/junior roles only (v1.1)"),
     test: bool = Query(default=False, description="Return sample data for UI testing"),
 ) -> JobMatchResponse:
     """Stage 3: rank live postings by fit against a resume."""
@@ -297,7 +298,7 @@ async def jobs_match(
         remote_ok=remote_ok,
     )
     try:
-        return await match_jobs(resume_id, location_pref, limit)
+        return await match_jobs(resume_id, location_pref, limit, fresher_only=fresher_only)
     except ValueError as exc:
         from fastapi import HTTPException
         raise HTTPException(status_code=400, detail=str(exc)) from exc

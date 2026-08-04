@@ -81,6 +81,9 @@ export interface JobMatch {
   top_gaps: string[];
   apply_url: string;
   flags?: string[];
+  experience_level?: "fresher" | "junior" | "mid" | "senior" | "unclear";
+  min_experience_years?: number | null;
+  employment_type?: "full_time" | "contract" | "freelance" | "part_time" | "unclear";
 }
 
 export interface AggregateGap {
@@ -90,5 +93,6 @@ export interface AggregateGap {
 
 export interface JobMatchResponse {
   matches: JobMatch[];
+  unclear_matches?: JobMatch[];
   aggregate_gaps: AggregateGap[];
 }
