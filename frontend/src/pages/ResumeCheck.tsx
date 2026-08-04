@@ -1,9 +1,9 @@
 import { useState } from "react";
-import { useMutation } from "@tanstack/react-query";
-import { Upload, FileText } from "lucide-react";
+import { useMutation, useQuery } from "@tanstack/react-query";
+import { Upload, FileText, Save, Star } from "lucide-react";
 
 import { api } from "@/lib/api";
-import type { ResumeCheckResponse } from "@/lib/types";
+import type { ResumeCheckResponse, SaveMode } from "@/lib/types";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 
@@ -14,77 +14,116 @@ function tierColor(tier: string) {
 }
 
 export default function ResumeCheckPage() {
-  const [resumeFile, setResumeFile] = useState<File | null>(null);
   const [jdText, setJdText] = useState("");
   const [result, setResult] = useState<ResumeCheckResponse | null>(null);
+  const [saveMode, setSaveMode] = useState<SaveMode | null>(null);
 
-  // Check if a resume is already stored from Settings
-  const storedResumeId = localStorage.getItem("resume_id") ?? "";
-  const storedFileName = localStorage.getItem("resume_filename") ?? "";
+  // One-off variant upload
+  const [useVariant, setUseVariant] = useState(false);
+  const [file, setFile] = useState<File | null>(null);
 
-  const mutation = useMutation({
-    mutationFn: ({ file, jd }: { file: File; jd: string }) =>
+  // FR2.10 (§8.6): check if a primary resume exists
+  const { data: primary } = useQuery({
+    queryKey: ["resume-primary"],
+    queryFn: () => api.getResumePrimary(),
+    retry: false,
+  });
+
+  const checkMutation = useMutation({
+    mutationFn: ({ file, jd }: { file: File | null; jd: string }) =>
       api.resumeCheck(file, jd),
     onSuccess: (data) => {
       setResult(data);
+      setSaveMode(null);
       if (data.resume_id) {
         localStorage.setItem("resume_id", data.resume_id);
       }
     },
   });
 
-  const canCheck = (storedResumeId || resumeFile) && jdText.trim();
+  const canCheck = jdText.trim() && (primary || useVariant || file);
 
   const handleCheck = () => {
-    if (resumeFile && jdText.trim()) {
-      // Upload new resume + check
-      mutation.mutate({ file: resumeFile, jd: jdText.trim() });
-    } else if (storedResumeId && jdText.trim()) {
-      // Use stored resume — need to re-upload it for the backend
-      // (the backend doesn't persist resume data across requests)
-      // For now, show a message asking to use Settings to upload
+    if (!jdText.trim()) return;
+    if (useVariant && file) {
+      checkMutation.mutate({ file, jd: jdText.trim() });
+    } else if (primary) {
+      checkMutation.mutate({ file: null, jd: jdText.trim() });
     }
   };
+
+  // Save mutation
+  const saveMutation = useMutation({
+    mutationFn: (mode: SaveMode) =>
+      fetch("/api/v1/resume/save", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          resume_id: result?.resume_id,
+          accepted_suggestions: result?.keyword_gaps
+            ?.filter((g) => g.suggested_text)
+            .map((g) => ({
+              bullet_id: g.bullet_id ?? "",
+              suggested_text: g.suggested_text ?? "",
+            })) ?? [],
+          mode,
+          confirm_overwrite: mode === "overwrite",
+        }),
+      }).then((r) => r.json()),
+    onSuccess: () => setSaveMode(null),
+  });
 
   return (
     <div className="space-y-6">
       <Card className="p-6">
         <h2 className="mb-4 text-lg font-semibold">ATS Resume Checker</h2>
         <p className="mb-4 text-sm text-muted-foreground">
-          {storedResumeId
-            ? "Using your main resume from Settings. Paste a JD to check."
+          {primary
+            ? "Using your primary resume from Settings. Paste a JD to check."
             : "Upload your resume and paste a JD to get ATS compatibility scores with confidence-tiered redline suggestions."
           }
         </p>
 
         <div className="mb-4 space-y-3">
-          {storedResumeId && !resumeFile ? (
+          {/* Primary resume display */}
+          {primary && !useVariant && (
             <div className="flex items-center gap-2 rounded-md bg-muted p-3 text-sm">
               <FileText className="h-4 w-4" />
-              <span>{storedFileName || "Resume uploaded"}</span>
-              <span className="text-xs text-muted-foreground">({storedResumeId})</span>
-              <label className="ml-auto cursor-pointer text-xs text-primary underline">
-                Replace
+              <span>{primary.filename || "Resume uploaded"}</span>
+              <span className="text-xs text-muted-foreground">({primary.resume_id})</span>
+              <button
+                onClick={() => setUseVariant(true)}
+                className="ml-auto text-xs text-primary underline"
+              >
+                Use a different resume
+              </button>
+            </div>
+          )}
+
+          {/* Variant upload */}
+          {(useVariant || !primary) && (
+            <div className="space-y-2">
+              <label className="flex cursor-pointer items-center gap-2 rounded-md border border-dashed p-4 text-sm text-muted-foreground hover:bg-muted">
+                <Upload className="h-4 w-4" />
+                {file ? file.name : "Upload resume (PDF/DOCX)"}
                 <input
                   type="file"
                   accept=".pdf,.docx"
                   className="hidden"
-                  onChange={(e) => setResumeFile(e.target.files?.[0] ?? null)}
+                  onChange={(e) => setFile(e.target.files?.[0] ?? null)}
                 />
               </label>
+              {primary && (
+                <button
+                  onClick={() => { setUseVariant(false); setFile(null); }}
+                  className="text-xs text-muted-foreground underline"
+                >
+                  ← Use primary resume instead
+                </button>
+              )}
             </div>
-          ) : (
-            <label className="flex cursor-pointer items-center gap-2 rounded-md border border-dashed p-4 text-sm text-muted-foreground hover:bg-muted">
-              <Upload className="h-4 w-4" />
-              {resumeFile ? resumeFile.name : "Upload resume (PDF/DOCX)"}
-              <input
-                type="file"
-                accept=".pdf,.docx"
-                className="hidden"
-                onChange={(e) => setResumeFile(e.target.files?.[0] ?? null)}
-              />
-            </label>
           )}
+
           <textarea
             value={jdText}
             onChange={(e) => setJdText(e.target.value)}
@@ -95,17 +134,17 @@ export default function ResumeCheckPage() {
         </div>
 
         <Button
-          disabled={!canCheck || mutation.isPending}
+          disabled={!canCheck || checkMutation.isPending}
           onClick={handleCheck}
         >
           <FileText className="mr-2 h-4 w-4" />
-          {mutation.isPending ? "Checking..." : "Check Resume"}
+          {checkMutation.isPending ? "Checking..." : "Check Resume"}
         </Button>
       </Card>
 
-      {mutation.isError && (
+      {checkMutation.isError && (
         <Card className="border-destructive p-4 text-sm text-destructive">
-          Error: {mutation.error.message}
+          Error: {checkMutation.error.message}
         </Card>
       )}
 
@@ -156,7 +195,6 @@ export default function ResumeCheckPage() {
                         {gap.rationale}
                       </p>
                     )}
-                    {/* Side-by-side redline view when both original and suggested exist */}
                     {gap.original_text && gap.suggested_text ? (
                       <div className="mt-2 ml-4 grid grid-cols-2 gap-2 rounded-md border p-3 text-xs">
                         <div>
@@ -182,6 +220,37 @@ export default function ResumeCheckPage() {
               </ul>
             </Card>
           )}
+
+          {/* Save actions */}
+          <Card className="p-6">
+            <h3 className="mb-3 font-medium">Save Changes</h3>
+            <p className="mb-3 text-sm text-muted-foreground">
+              Choose how to save the keyword suggestions above.
+            </p>
+            <div className="flex gap-3 flex-wrap">
+              <Button
+                variant={saveMode === "new_file" ? "default" : "outline"}
+                disabled={saveMutation.isPending}
+                onClick={() => { setSaveMode("new_file"); saveMutation.mutate("new_file"); }}
+              >
+                <Save className="mr-2 h-4 w-4" />
+                {saveMutation.isPending && saveMode === "new_file" ? "Saving..." : "Save as New File"}
+              </Button>
+              {result.resume_id && (
+                <Button
+                  variant={saveMode === "set_as_primary" ? "default" : "outline"}
+                  disabled={saveMutation.isPending}
+                  onClick={() => { setSaveMode("set_as_primary"); saveMutation.mutate("set_as_primary"); }}
+                >
+                  <Star className="mr-2 h-4 w-4" />
+                  {saveMutation.isPending && saveMode === "set_as_primary" ? "Saving..." : "Set as Primary"}
+                </Button>
+              )}
+            </div>
+            {saveMutation.isSuccess && (
+              <p className="mt-2 text-sm text-green-700">Changes saved successfully.</p>
+            )}
+          </Card>
         </>
       )}
     </div>

@@ -96,16 +96,25 @@ function JobCard({ job }: { job: any }) {
 }
 
 export default function JobMatchPage() {
-  const resumeId = localStorage.getItem("resume_id") ?? "";
-  const resumeFileName = localStorage.getItem("resume_filename") ?? "";
   const [testMode, setTestMode] = useState(true);
   const [fresherOnly, setFresherOnly] = useState(false);
   const [showUnclear, setShowUnclear] = useState(false);
 
+  // FR2.12 (§8.6): resolve primary resume from backend
+  const { data: primary } = useQuery({
+    queryKey: ["resume-primary"],
+    queryFn: () => api.getResumePrimary(),
+    retry: false,
+  });
+
+  const resumeId = localStorage.getItem("resume_id") ?? "";
+  const resumeFileName = primary?.filename || localStorage.getItem("resume_filename") ?? "";
+  const hasResume = !!primary || !!resumeId;
+
   const { data, isLoading, error, refetch } = useQuery({
-    queryKey: ["jobs", resumeId, testMode, fresherOnly],
+    queryKey: ["jobs", resumeId, testMode, fresherOnly, primary?.resume_id],
     queryFn: () => api.jobsMatch(resumeId, 20, testMode, fresherOnly),
-    enabled: !!resumeId,
+    enabled: hasResume,
   });
 
   return (
@@ -114,15 +123,17 @@ export default function JobMatchPage() {
       <Card className="p-6">
         <h2 className="mb-2 text-lg font-semibold">Job Matcher</h2>
         <p className="mb-4 text-sm text-muted-foreground">
-          {resumeId
+          {hasResume
             ? "Matching postings against your main resume."
             : "Upload your resume in Settings first, then come back here."}
         </p>
-        {resumeId ? (
+        {hasResume ? (
           <div className="mb-3 flex items-center gap-2 rounded-md bg-muted p-3 text-sm">
             <Briefcase className="h-4 w-4" />
             <span>{resumeFileName || "Resume loaded"}</span>
-            <span className="text-xs text-muted-foreground">({resumeId})</span>
+            <span className="text-xs text-muted-foreground">
+              ({primary?.resume_id || resumeId})
+            </span>
             <button
               onClick={() => refetch()}
               disabled={isLoading}
@@ -133,7 +144,7 @@ export default function JobMatchPage() {
           </div>
         ) : (
           <div className="rounded-md bg-yellow-50 p-3 text-sm text-yellow-800">
-            No resume uploaded yet. Go to <strong>Settings</strong> → Main Resume to upload your resume.
+            No resume uploaded yet. Go to <strong>Settings</strong> → Primary Resume to upload your resume.
           </div>
         )}
         <div className="flex flex-wrap gap-4 text-xs text-muted-foreground">

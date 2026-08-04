@@ -1,7 +1,7 @@
 // Mirrors backend Pydantic schemas
 
 export type ConfidenceTier = "verified" | "reworded" | "gap";
-export type SaveMode = "new_file" | "overwrite";
+export type SaveMode = "new_file" | "overwrite" | "set_as_primary";
 
 // Health
 
@@ -95,4 +95,12 @@ export interface JobMatchResponse {
   matches: JobMatch[];
   unclear_matches?: JobMatch[];
   aggregate_gaps: AggregateGap[];
+}
+
+// Primary resume management (§8.6)
+
+export interface ResumePrimaryInfo {
+  resume_id: string;
+  filename: string;
+  uploaded_at: string;
 }

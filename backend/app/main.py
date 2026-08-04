@@ -2,9 +2,9 @@
 
 Exposes:
 - GET /health  — dependency health check (ChromaDB, Ollama, Redis)
-- Stage 1: /api/v1/search (stub)
-- Stage 2: /api/v1/resume (stub)
-- Stage 3: /api/v1/jobs (stub)
+- Stage 1: /api/v1/search
+- Stage 2: /api/v1/resume (check, save, primary resume management)
+- Stage 3: /api/v1/jobs
 """
 from __future__ import annotations
 
@@ -14,7 +14,7 @@ from contextlib import asynccontextmanager
 
 import httpx
 import redis.asyncio as redis
-from fastapi import FastAPI, File, Form, Query, UploadFile
+from fastapi import FastAPI, File, Form, HTTPException, Query, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 
 from .config import settings
@@ -26,6 +26,7 @@ from .models.schemas import (
     JobMatchResponse,
     LocationMode,
     ResumeCheckResponse,
+    ResumePrimaryInfo,
     ResumeSaveRequest,
     ResumeSaveResponse,
     SearchRequest,
@@ -204,32 +205,52 @@ async def search(request: SearchRequest) -> SearchResponse:
 
 @app.post("/api/v1/resume/check", response_model=ResumeCheckResponse, tags=["stage2"])
 async def resume_check(
-    resume_file: UploadFile = File(...),
+    resume_file: UploadFile | None = File(None),
     jd_text: str = Form(...),
 ) -> ResumeCheckResponse:
-    """Stage 2: check a resume (PDF/DOCX) against a job description."""
+    """Stage 2: check a resume against a job description.
+
+    FR2.10 (§8.6): If ``resume_file`` is omitted, checks the user's
+    primary resume from Settings.  If a file is provided, it's treated
+    as a one-off variant check — scored and redlined, but never silently
+    replaces the primary.
+    """
     from .services import resume_store
     from .services.ats_checker import check_resume
 
-    content = await resume_file.read()
-    if not content:
-        from fastapi import HTTPException
-        raise HTTPException(status_code=400, detail="Uploaded resume is empty")
+    if resume_file is not None:
+        # Variant check — upload and check against the provided file
+        content = await resume_file.read()
+        if not content:
+            raise HTTPException(status_code=400, detail="Uploaded resume is empty")
+        resume_id, saved_path = resume_store.store_upload(
+            content, resume_file.filename or "resume",
+        )
+    else:
+        # Primary resume check — resolve from the primary index
+        resume_id = resume_store.get_primary_id()
+        if not resume_id:
+            raise HTTPException(
+                status_code=400,
+                detail="No resume file uploaded and no primary resume set. "
+                       "Upload a resume in Settings first.",
+            )
+        saved_path = resume_store.original_file_path(resume_id)
+        if saved_path is None:
+            raise HTTPException(
+                status_code=404,
+                detail=f"Primary resume file not found on disk for {resume_id}.",
+            )
 
-    # Persist the upload and get a resume_id for later save
-    resume_id, saved_path = resume_store.store_upload(
-        content, resume_file.filename or "resume",
-    )
     try:
         return await check_resume(str(saved_path), jd_text, resume_id=resume_id)
     except ValueError as exc:
-        from fastapi import HTTPException
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
 @app.post("/api/v1/resume/save", response_model=ResumeSaveResponse, tags=["stage2"])
 async def resume_save(request: ResumeSaveRequest) -> ResumeSaveResponse:
-    """Stage 2: save accepted redline suggestions as a new file or overwrite."""
+    """Stage 2: save accepted redline suggestions as a new file, overwrite, or set as primary."""
     from .services.resume_saver import save_resume
     try:
         return await save_resume(
@@ -239,13 +260,61 @@ async def resume_save(request: ResumeSaveRequest) -> ResumeSaveResponse:
             confirm_overwrite=request.confirm_overwrite,
         )
     except ValueError as exc:
-        from fastapi import HTTPException
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+# ---------------------------------------------------------------------------
+# Primary resume management (§8.6 FR2.9)
+# ---------------------------------------------------------------------------
+
+@app.get("/api/v1/resume/primary", response_model=ResumePrimaryInfo, tags=["stage2"])
+async def get_primary_resume() -> ResumePrimaryInfo:
+    """Return the current primary resume's metadata, or 404 if none is set."""
+    from .services import resume_store
+    info = resume_store.get_primary_info()
+    if info is None:
+        raise HTTPException(status_code=404, detail="No primary resume is set. Upload one in Settings.")
+    return ResumePrimaryInfo(**info)
+
+
+@app.post("/api/v1/resume/primary", response_model=ResumePrimaryInfo, tags=["stage2"])
+async def set_primary_resume(
+    resume_file: UploadFile = File(...),
+) -> ResumePrimaryInfo:
+    """Upload a resume and set it as the primary resume.
+
+    FR2.9 (§8.6): Settings page upload slot.  Stores the file, parses it,
+    and marks it as primary so /resume/check and /jobs/match can resolve it.
+    """
+    from .services import resume_store
+    from .services.resume_parser import parse_resume
+
+    content = await resume_file.read()
+    if not content:
+        raise HTTPException(status_code=400, detail="Uploaded resume is empty")
+
+    # Store the file and get a resume_id
+    resume_id, saved_path = resume_store.store_upload(
+        content, resume_file.filename or "resume",
+    )
+
+    # Parse and persist for downstream matching (/jobs/match needs bullets)
+    try:
+        parsed = parse_resume(str(saved_path))
+        resume_store.save_parsed(resume_id, parsed)
+    except Exception as exc:
+        logger.warning("Primary resume parse failed: %s (storing raw only)", exc)
+
+    # Set as primary
+    resume_store.set_primary(resume_id)
+
+    info = resume_store.get_primary_info()
+    return ResumePrimaryInfo(**info)
 
 
 @app.get("/api/v1/jobs/match", response_model=JobMatchResponse, tags=["stage3"])
 async def jobs_match(
-    resume_id: str,
+    resume_id: str | None = Query(default=None),
     limit: int = Query(default=20, ge=1, le=100),
     location_mode: LocationMode = LocationMode.SPECIFIC_CITY,
     cities: str = Query(default="", description="Comma-separated cities"),
@@ -253,7 +322,11 @@ async def jobs_match(
     fresher_only: bool = Query(default=False, description="Filter to fresher/junior roles only (v1.1)"),
     test: bool = Query(default=False, description="Return sample data for UI testing"),
 ) -> JobMatchResponse:
-    """Stage 3: rank live postings by fit against a resume."""
+    """Stage 3: rank live postings by fit against a resume.
+
+    FR2.12 (§8.6): ``resume_id`` is optional — when omitted, matches
+    against the user's current primary resume.
+    """
     from datetime import datetime, timezone
     from .models.schemas import (
         AggregateGap, JobMatch as JM, LocationMatch as LM,
@@ -289,6 +362,17 @@ async def jobs_match(
             ],
         )
 
+    # FR2.12: resolve primary resume if resume_id is not provided
+    if not resume_id:
+        from .services import resume_store
+        resume_id = resume_store.get_primary_id()
+        if not resume_id:
+            raise HTTPException(
+                status_code=400,
+                detail="No resume_id provided and no primary resume set. "
+                       "Upload a resume in Settings or provide a resume_id.",
+            )
+
     from .services.job_matcher import match_jobs
     from .models.schemas import LocationPreference
 
@@ -300,7 +384,6 @@ async def jobs_match(
     try:
         return await match_jobs(resume_id, location_pref, limit, fresher_only=fresher_only)
     except ValueError as exc:
-        from fastapi import HTTPException
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 

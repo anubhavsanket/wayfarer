@@ -83,6 +83,14 @@ class AcceptedSuggestion(BaseModel):
 class SaveMode(str, Enum):
     NEW_FILE = "new_file"
     OVERWRITE = "overwrite"
+    SET_AS_PRIMARY = "set_as_primary"
+
+
+class ResumePrimaryInfo(BaseModel):
+    """Response schema for primary resume endpoints (§8.6)."""
+    resume_id: str
+    filename: str
+    uploaded_at: str
 
 
 class ResumeSaveRequest(BaseModel):

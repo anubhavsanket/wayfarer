@@ -5,6 +5,9 @@ redline suggestions, let them choose to **save as a new file** (default,
 non-destructive) or **overwrite the original** upload. Overwrite requires
 an explicit ``confirm_overwrite`` — never silently replace the source.
 
+FR2.11 (PRD §8.6): ``set_as_primary`` mode applies suggestions, saves a
+new file, re-persists the parsed data, and promotes the resume to primary.
+
 The v1 output is a reconstructed .docx (the original upload is left
 untouched in ``data/uploads/{resume_id}/`` until overwrite is confirmed).
 Native OOXML track-changes is a v2 stretch.
@@ -153,9 +156,14 @@ async def save_resume(
     # Write the DOCX
     _write_docx(edited, out_path)
 
-    if mode == SaveMode.OVERWRITE:
-        # Re-persist the edited parsed data so future saves reflect the change
+    # For overwrite and set_as_primary: re-persist the edited parsed data
+    # so future loads/queries reflect the change
+    if mode in (SaveMode.OVERWRITE, SaveMode.SET_AS_PRIMARY):
         resume_store.save_parsed(resume_id, edited)
+
+    # FR2.11: set_as_primary applies suggestions, saves, and promotes
+    if mode == SaveMode.SET_AS_PRIMARY:
+        resume_store.set_primary(resume_id)
 
     return ResumeSaveResponse(
         file_id=uuid.uuid4().hex[:12],

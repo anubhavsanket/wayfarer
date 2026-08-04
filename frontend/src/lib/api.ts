@@ -2,6 +2,7 @@ import type {
   HealthResponse,
   JobMatchResponse,
   ResumeCheckResponse,
+  ResumePrimaryInfo,
   SearchResponse,
 } from "./types";
 import { buildAuthHeaders } from "@/stores/settings";
@@ -35,9 +36,10 @@ export const api = {
     }),
 
   // Stage 2 — Resume check
-  resumeCheck: (resumeFile: File, jdText: string) => {
+  // FR2.10 (§8.6): resumeFile is optional — omit to use primary resume
+  resumeCheck: (resumeFile: File | null, jdText: string) => {
     const form = new FormData();
-    form.append("resume_file", resumeFile);
+    if (resumeFile) form.append("resume_file", resumeFile);
     form.append("jd_text", jdText);
     return fetch(`${API_BASE}/api/v1/resume/check`, {
       method: "POST",
@@ -46,9 +48,27 @@ export const api = {
     }).then((r) => r.json() as Promise<ResumeCheckResponse>);
   },
 
+  // Primary resume management (§8.6 FR2.9)
+  getResumePrimary: () => request<ResumePrimaryInfo>("/api/v1/resume/primary"),
+
+  setResumePrimary: (file: File) => {
+    const form = new FormData();
+    form.append("resume_file", file);
+    return fetch(`${API_BASE}/api/v1/resume/primary`, {
+      method: "POST",
+      headers: buildAuthHeaders(),
+      body: form,
+    }).then((r) => r.json() as Promise<ResumePrimaryInfo>);
+  },
+
   // Stage 3 — Job matching
-  jobsMatch: (resumeId: string, limit = 20, test = false, fresherOnly = false) =>
-    request<JobMatchResponse>(
-      `/api/v1/jobs/match?resume_id=${resumeId}&limit=${limit}${test ? "&test=true" : ""}${fresherOnly ? "&fresher_only=true" : ""}`
-    ),
+  // FR2.12 (§8.6): resumeId is optional — omit to use primary resume
+  jobsMatch: (resumeId = "", limit = 20, test = false, fresherOnly = false) => {
+    const params = new URLSearchParams();
+    if (resumeId) params.set("resume_id", resumeId);
+    params.set("limit", limit.toString());
+    if (test) params.set("test", "true");
+    if (fresherOnly) params.set("fresher_only", "true");
+    return request<JobMatchResponse>(`/api/v1/jobs/match?${params.toString()}`);
+  },
 };

@@ -1,8 +1,9 @@
-import { useState } from "react";
-import { useMutation } from "@tanstack/react-query";
+import { useState, useEffect } from "react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Settings as SettingsIcon, Eye, EyeOff, Save, RotateCcw, CheckCircle2, Upload } from "lucide-react";
 import { useSettings } from "@/stores/settings";
 import { api } from "@/lib/api";
+import type { ResumePrimaryInfo } from "@/lib/types";
 import { Card } from "@/components/ui/card";
 
 const PROVIDERS = [
@@ -13,53 +14,65 @@ const PROVIDERS = [
   { value: "custom", label: "Custom OpenAI-compatible" },
 ];
 
-// Resume upload card component
+// Primary resume upload card (§8.6 FR2.9)
 function ResumeUploadCard() {
-  const [resumeFile, setResumeFile] = useState<File | null>(null);
-  const [storedResumeId, setStoredResumeId] = useState(
-    () => localStorage.getItem("resume_id") ?? ""
-  );
-  const [storedFileName, setStoredFileName] = useState(
-    () => localStorage.getItem("resume_filename") ?? ""
-  );
+  const queryClient = useQueryClient();
+
+  // Fetch current primary resume from backend
+  const { data: primary } = useQuery({
+    queryKey: ["resume-primary"],
+    queryFn: () => api.getResumePrimary(),
+    retry: false,
+  });
 
   const mutation = useMutation({
-    mutationFn: (file: File) => api.resumeCheck(file, "placeholder"),
-    onSuccess: (data) => {
-      setStoredResumeId(data.resume_id);
-      setStoredFileName(resumeFile?.name ?? "");
+    mutationFn: (file: File) => api.setResumePrimary(file),
+    onSuccess: (data: ResumePrimaryInfo) => {
+      // Update the cache and also store in localStorage for backward compat
+      queryClient.setQueryData(["resume-primary"], data);
       localStorage.setItem("resume_id", data.resume_id);
-      localStorage.setItem("resume_filename", resumeFile?.name ?? "");
+      localStorage.setItem("resume_filename", data.filename);
     },
   });
 
+  const info = primary;
+
   return (
     <Card className="p-6">
-      <h3 className="mb-2 font-medium">Main Resume</h3>
+      <h3 className="mb-2 font-medium">Primary Resume</h3>
       <p className="mb-4 text-sm text-muted-foreground">
         Upload your resume once. It will be used automatically by Resume Check
         and Job Match — no need to re-upload each time.
       </p>
 
-      {storedResumeId && (
+      {info && (
         <div className="mb-4 flex items-center gap-2 rounded-md bg-green-50 p-3 text-sm text-green-800">
           <CheckCircle2 className="h-4 w-4" />
-          <span className="font-medium">{storedFileName || "Resume uploaded"}</span>
-          <span className="text-xs text-green-600">({storedResumeId})</span>
+          <span className="font-medium">{info.filename || "Resume uploaded"}</span>
+          <span className="text-xs text-green-600">({info.resume_id})</span>
+          {info.uploaded_at && (
+            <span className="text-xs text-green-600">
+              · {new Date(info.uploaded_at).toLocaleDateString()}
+            </span>
+          )}
         </div>
       )}
 
       <label className="flex cursor-pointer items-center gap-2 rounded-md border border-dashed p-4 text-sm text-muted-foreground hover:bg-muted">
         <Upload className="h-4 w-4" />
-        {resumeFile ? resumeFile.name : storedResumeId ? "Replace resume" : "Upload resume (PDF/DOCX)"}
+        {mutation.isPending
+          ? "Uploading..."
+          : info
+            ? "Replace resume"
+            : "Upload resume (PDF/DOCX)"}
         <input
           type="file"
           accept=".pdf,.docx"
           className="hidden"
+          disabled={mutation.isPending}
           onChange={(e) => {
             const file = e.target.files?.[0];
             if (file) {
-              setResumeFile(file);
               mutation.mutate(file);
             }
           }}
