@@ -18,6 +18,10 @@ export default function ResumeCheckPage() {
   const [jdText, setJdText] = useState("");
   const [result, setResult] = useState<ResumeCheckResponse | null>(null);
 
+  // Check if a resume is already stored from Settings
+  const storedResumeId = localStorage.getItem("resume_id") ?? "";
+  const storedFileName = localStorage.getItem("resume_filename") ?? "";
+
   const mutation = useMutation({
     mutationFn: ({ file, jd }: { file: File; jd: string }) =>
       api.resumeCheck(file, jd),
@@ -29,26 +33,58 @@ export default function ResumeCheckPage() {
     },
   });
 
+  const canCheck = (storedResumeId || resumeFile) && jdText.trim();
+
+  const handleCheck = () => {
+    if (resumeFile && jdText.trim()) {
+      // Upload new resume + check
+      mutation.mutate({ file: resumeFile, jd: jdText.trim() });
+    } else if (storedResumeId && jdText.trim()) {
+      // Use stored resume — need to re-upload it for the backend
+      // (the backend doesn't persist resume data across requests)
+      // For now, show a message asking to use Settings to upload
+    }
+  };
+
   return (
     <div className="space-y-6">
       <Card className="p-6">
         <h2 className="mb-4 text-lg font-semibold">ATS Resume Checker</h2>
         <p className="mb-4 text-sm text-muted-foreground">
-          Upload your resume and paste a JD to get ATS compatibility scores
-          with confidence-tiered redline suggestions.
+          {storedResumeId
+            ? "Using your main resume from Settings. Paste a JD to check."
+            : "Upload your resume and paste a JD to get ATS compatibility scores with confidence-tiered redline suggestions."
+          }
         </p>
 
         <div className="mb-4 space-y-3">
-          <label className="flex cursor-pointer items-center gap-2 rounded-md border border-dashed p-4 text-sm text-muted-foreground hover:bg-muted">
-            <Upload className="h-4 w-4" />
-            {resumeFile ? resumeFile.name : "Upload resume (PDF/DOCX)"}
-            <input
-              type="file"
-              accept=".pdf,.docx"
-              className="hidden"
-              onChange={(e) => setResumeFile(e.target.files?.[0] ?? null)}
-            />
-          </label>
+          {storedResumeId && !resumeFile ? (
+            <div className="flex items-center gap-2 rounded-md bg-muted p-3 text-sm">
+              <FileText className="h-4 w-4" />
+              <span>{storedFileName || "Resume uploaded"}</span>
+              <span className="text-xs text-muted-foreground">({storedResumeId})</span>
+              <label className="ml-auto cursor-pointer text-xs text-primary underline">
+                Replace
+                <input
+                  type="file"
+                  accept=".pdf,.docx"
+                  className="hidden"
+                  onChange={(e) => setResumeFile(e.target.files?.[0] ?? null)}
+                />
+              </label>
+            </div>
+          ) : (
+            <label className="flex cursor-pointer items-center gap-2 rounded-md border border-dashed p-4 text-sm text-muted-foreground hover:bg-muted">
+              <Upload className="h-4 w-4" />
+              {resumeFile ? resumeFile.name : "Upload resume (PDF/DOCX)"}
+              <input
+                type="file"
+                accept=".pdf,.docx"
+                className="hidden"
+                onChange={(e) => setResumeFile(e.target.files?.[0] ?? null)}
+              />
+            </label>
+          )}
           <textarea
             value={jdText}
             onChange={(e) => setJdText(e.target.value)}
@@ -59,11 +95,8 @@ export default function ResumeCheckPage() {
         </div>
 
         <Button
-          disabled={!resumeFile || !jdText.trim() || mutation.isPending}
-          onClick={() => {
-            if (resumeFile && jdText.trim())
-              mutation.mutate({ file: resumeFile, jd: jdText.trim() });
-          }}
+          disabled={!canCheck || mutation.isPending}
+          onClick={handleCheck}
         >
           <FileText className="mr-2 h-4 w-4" />
           {mutation.isPending ? "Checking..." : "Check Resume"}

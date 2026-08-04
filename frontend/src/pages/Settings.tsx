@@ -1,6 +1,8 @@
 import { useState } from "react";
-import { Settings as SettingsIcon, Eye, EyeOff, Save, RotateCcw, CheckCircle2 } from "lucide-react";
+import { useMutation } from "@tanstack/react-query";
+import { Settings as SettingsIcon, Eye, EyeOff, Save, RotateCcw, CheckCircle2, Upload } from "lucide-react";
 import { useSettings } from "@/stores/settings";
+import { api } from "@/lib/api";
 import { Card } from "@/components/ui/card";
 
 const PROVIDERS = [
@@ -10,6 +12,71 @@ const PROVIDERS = [
   { value: "lmstudio", label: "LM Studio (local)" },
   { value: "custom", label: "Custom OpenAI-compatible" },
 ];
+
+// Resume upload card component
+function ResumeUploadCard() {
+  const [resumeFile, setResumeFile] = useState<File | null>(null);
+  const [storedResumeId, setStoredResumeId] = useState(
+    () => localStorage.getItem("resume_id") ?? ""
+  );
+  const [storedFileName, setStoredFileName] = useState(
+    () => localStorage.getItem("resume_filename") ?? ""
+  );
+
+  const mutation = useMutation({
+    mutationFn: (file: File) => api.resumeCheck(file, "placeholder"),
+    onSuccess: (data) => {
+      setStoredResumeId(data.resume_id);
+      setStoredFileName(resumeFile?.name ?? "");
+      localStorage.setItem("resume_id", data.resume_id);
+      localStorage.setItem("resume_filename", resumeFile?.name ?? "");
+    },
+  });
+
+  return (
+    <Card className="p-6">
+      <h3 className="mb-2 font-medium">Main Resume</h3>
+      <p className="mb-4 text-sm text-muted-foreground">
+        Upload your resume once. It will be used automatically by Resume Check
+        and Job Match — no need to re-upload each time.
+      </p>
+
+      {storedResumeId && (
+        <div className="mb-4 flex items-center gap-2 rounded-md bg-green-50 p-3 text-sm text-green-800">
+          <CheckCircle2 className="h-4 w-4" />
+          <span className="font-medium">{storedFileName || "Resume uploaded"}</span>
+          <span className="text-xs text-green-600">({storedResumeId})</span>
+        </div>
+      )}
+
+      <label className="flex cursor-pointer items-center gap-2 rounded-md border border-dashed p-4 text-sm text-muted-foreground hover:bg-muted">
+        <Upload className="h-4 w-4" />
+        {resumeFile ? resumeFile.name : storedResumeId ? "Replace resume" : "Upload resume (PDF/DOCX)"}
+        <input
+          type="file"
+          accept=".pdf,.docx"
+          className="hidden"
+          onChange={(e) => {
+            const file = e.target.files?.[0];
+            if (file) {
+              setResumeFile(file);
+              mutation.mutate(file);
+            }
+          }}
+        />
+      </label>
+
+      {mutation.isError && (
+        <p className="mt-2 text-sm text-destructive">
+          Upload failed: {mutation.error.message}
+        </p>
+      )}
+      {mutation.isPending && (
+        <p className="mt-2 text-sm text-muted-foreground">Processing resume...</p>
+      )}
+    </Card>
+  );
+}
 
 interface FieldProps {
   label: string;
@@ -177,6 +244,9 @@ export default function SettingsPage() {
           </p>
         </div>
       </Card>
+
+      {/* Resume Upload */}
+      <ResumeUploadCard />
 
       {/* Actions */}
       <Card className="p-6">

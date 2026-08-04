@@ -96,10 +96,8 @@ function JobCard({ job }: { job: any }) {
 }
 
 export default function JobMatchPage() {
-  const [resumeIdInput, setResumeIdInput] = useState(
-    () => localStorage.getItem("resume_id") ?? ""
-  );
-  const resumeId = resumeIdInput.trim();
+  const resumeId = localStorage.getItem("resume_id") ?? "";
+  const resumeFileName = localStorage.getItem("resume_filename") ?? "";
   const [testMode, setTestMode] = useState(true);
   const [fresherOnly, setFresherOnly] = useState(false);
   const [showUnclear, setShowUnclear] = useState(false);
@@ -116,23 +114,28 @@ export default function JobMatchPage() {
       <Card className="p-6">
         <h2 className="mb-2 text-lg font-semibold">Job Matcher</h2>
         <p className="mb-4 text-sm text-muted-foreground">
-          Live postings ranked by fit, with apply links and gap analysis.
+          {resumeId
+            ? "Matching postings against your main resume."
+            : "Upload your resume in Settings first, then come back here."}
         </p>
-        <div className="flex gap-3 mb-3">
-          <input
-            value={resumeIdInput}
-            onChange={(e) => setResumeIdInput(e.target.value)}
-            placeholder="Enter resume_id from Resume Check"
-            className="flex-1 rounded-md border bg-background px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-ring"
-          />
-          <button
-            onClick={() => refetch()}
-            disabled={!resumeId || isLoading}
-            className="rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
-          >
-            {isLoading ? "Loading..." : "Match"}
-          </button>
-        </div>
+        {resumeId ? (
+          <div className="mb-3 flex items-center gap-2 rounded-md bg-muted p-3 text-sm">
+            <Briefcase className="h-4 w-4" />
+            <span>{resumeFileName || "Resume loaded"}</span>
+            <span className="text-xs text-muted-foreground">({resumeId})</span>
+            <button
+              onClick={() => refetch()}
+              disabled={isLoading}
+              className="ml-auto rounded-md bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
+            >
+              {isLoading ? "Loading..." : "Find Matches"}
+            </button>
+          </div>
+        ) : (
+          <div className="rounded-md bg-yellow-50 p-3 text-sm text-yellow-800">
+            No resume uploaded yet. Go to <strong>Settings</strong> → Main Resume to upload your resume.
+          </div>
+        )}
         <div className="flex flex-wrap gap-4 text-xs text-muted-foreground">
           <label className="flex items-center gap-2 cursor-pointer">
             <input
