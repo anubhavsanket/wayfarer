@@ -76,9 +76,13 @@ class _RateLimitBucket:
 # ---------------------------------------------------------------------------
 
 class LLMRouter:
-    """Multi-provider chat router with fallback and rate limiting."""
+    """Multi-provider chat router with fallback and rate limiting.
 
-    PROVIDER_ORDER = ("nvidia", "openrouter", "ollama")
+    Supports: nvidia, openrouter, ollama, lmstudio, custom.
+    LM Studio and custom use the same OpenAI-compatible chat endpoint.
+    """
+
+    PROVIDER_ORDER = ("nvidia", "openrouter", "ollama", "lmstudio", "custom")
 
     def __init__(self, providers: tuple[str, ...] | None = None) -> None:
         if providers:
@@ -187,6 +191,12 @@ class LLMRouter:
 
     def _model_for(self, provider: str, tier: str) -> str | None:
         """Resolve the model for a provider+tier, or None if unavailable."""
+        # For lmstudio / custom, use the explicit model name from settings
+        if provider == "lmstudio":
+            return settings.LMSTUDIO_MODEL or None
+        if provider == "custom":
+            return settings.CUSTOM_LLM_MODEL or None
+
         tier_models = settings.LLM_MODELS.get(tier, settings.LLM_MODELS["simple"])
         model = tier_models.get(provider)
         if not model:
@@ -251,16 +261,22 @@ class LLMRouter:
         cache_control: bool,
         json_mode: bool,
     ) -> dict[str, Any]:
-        endpoint = (
-            settings.NVIDIA_NIM_ENDPOINT
-            if provider == "nvidia"
-            else settings.OPENROUTER_ENDPOINT
-        )
-        api_key = (
-            settings.NVIDIA_NIM_API_KEY
-            if provider == "nvidia"
-            else settings.OPENROUTER_API_KEY
-        )
+        # Resolve endpoint and API key per provider
+        if provider == "nvidia":
+            endpoint = settings.NVIDIA_NIM_ENDPOINT
+            api_key = settings.NVIDIA_NIM_API_KEY
+        elif provider == "openrouter":
+            endpoint = settings.OPENROUTER_ENDPOINT
+            api_key = settings.OPENROUTER_API_KEY
+        elif provider == "lmstudio":
+            endpoint = settings.LMSTUDIO_ENDPOINT
+            api_key = settings.LMSTUDIO_API_KEY
+        elif provider == "custom":
+            endpoint = settings.CUSTOM_LLM_ENDPOINT
+            api_key = settings.CUSTOM_LLM_API_KEY
+        else:
+            endpoint = settings.NVIDIA_NIM_ENDPOINT
+            api_key = settings.NVIDIA_NIM_API_KEY
         url = f"{endpoint.rstrip('/')}/chat/completions"
 
         payload: dict[str, Any] = {

@@ -6,8 +6,10 @@ job_boards:
   - name: bluedoor
     enabled: true
     type: rest_api
-    base_url: "https://api.bluedoor.sh/v1/postings"
-    auth: none
+    base_url: "https://api.bluedoor.sh/job-postings/v1/postings"
+    auth: api_key
+    api_key_env: "BLUEDOOR_API_KEY"
+    auth_header: "Authorization: Bearer"
     rate_limit_per_min: 60
     field_mapping:
       title: "$.job_title"
@@ -19,6 +21,8 @@ job_boards:
     pagination:
       type: "offset"
       param: "page"
+    query_params:
+      q: "python"  # default search query
 
   - name: linkedin_guest
     enabled: true

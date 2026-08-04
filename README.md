@@ -311,15 +311,24 @@ Configuration is layered:
 
 | Variable | Purpose | Required for |
 |---|---|---|
-| `LLM_PROVIDER` | Primary LLM provider | `nvidia` / `openrouter` / `ollama` |
+| `LLM_PROVIDER` | Primary LLM provider | `nvidia` / `openrouter` / `ollama` / `lmstudio` / `custom` |
 | `NVIDIA_NIM_API_KEY` | NVIDIA NIM free-tier router | When `LLM_PROVIDER=nvidia` |
 | `OPENROUTER_API_KEY` | OpenRouter free-tier router | When `LLM_PROVIDER=openrouter` |
 | `TAVILY_API_KEY` | Search API (primary) | Stage 1 |
 | `BRAVE_API_KEY` | Search API (fallback) | Stage 1 if Tavily missing |
+| `BLUEDOOR_API_KEY` | Job board API (Stage 3) | When using bluedoor postings |
 
-When `LLM_PROVIDER=ollama` (default), no API keys are needed — everything
-runs locally via Ollama. The router always falls back through the other
-providers if the primary one fails.
+**Provider options:**
+
+| Provider | How it works | API key needed? |
+|---|---|---|
+| `nvidia` | NVIDIA NIM free tier (cloud) | Yes (`NVIDIA_NIM_API_KEY`) |
+| `openrouter` | OpenRouter free tier (cloud) | Yes (`OPENROUTER_API_KEY`) |
+| `ollama` | Local Ollama server (GPU) | No — pull model first |
+| `lmstudio` | Local LM Studio or any OpenAI-compatible server | No — set `LMSTUDIO_ENDPOINT` + `LMSTUDIO_MODEL` |
+| `custom` | Any OpenAI-compatible endpoint (e.g. vLLM, text-generation-webui) | Yes (`CUSTOM_LLM_ENDPOINT` + `CUSTOM_LLM_API_KEY` + `CUSTOM_LLM_MODEL`) |
+
+The router always falls back through the provider list if the primary fails.
 
 ### Optional overrides
 
