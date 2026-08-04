@@ -1,0 +1,74 @@
+# Wayfarer — Job Board Registry
+# Every job source is defined as an entry here, not as bespoke code.
+# Adding a new board = adding an entry here, not writing new fetch/parse code.
+
+job_boards:
+  - name: bluedoor
+    enabled: true
+    type: rest_api
+    base_url: "https://api.bluedoor.sh/job-postings/v1/jobs/search"
+    auth: api_key
+    api_key_env: "BLUEDOOR_API_KEY"
+    rate_limit_per_min: 100  # free tier: 100 req/s, burst 500
+    field_mapping:
+      id: "$.job_id"
+      title: "$.title"
+      company: "$.org_name"       # falls back to provider if empty
+      location: "$.city"
+      remote_type: "$.remote_policy"
+      url: "$.apply_url"
+      description: "$.description" # falls back to empty if missing
+    pagination:
+      type: "none"
+      param: ""
+      max_pages: 1
+
+  - name: linkedin_guest
+    enabled: true
+    type: rest_api
+    base_url: "https://www.linkedin.com/jobs-guest/jobs/api/seeMoreJobPostings/search"
+    auth: none
+    rate_limit_per_min: 20
+    extra_headers:
+      User-Agent: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36"
+      Accept: "text/html"
+    field_mapping:
+      title: "$.title"
+      company: "$.org_name"
+      location: "$.city"
+      url: "$.apply_url"
+    pagination:
+      type: "start_offset"
+      param: "start"
+
+  # Adding a new board = adding an entry here, not writing new fetch/parse code
+  - name: custom_board_example
+    enabled: false
+    type: rest_api
+    base_url: "https://example-jobboard.com/api/jobs"
+    auth: api_key
+    api_key_env: "CUSTOM_BOARD_API_KEY"
+    rate_limit_per_min: 30
+    field_mapping:
+      title: "$.title"
+      company: "$.company"
+      location: "$.city"
+      url: "$.link"
+
+  # Example of an HTML scrape board (CSS selectors instead of field_mapping)
+  - name: naukri_example
+    enabled: false
+    type: html_scrape
+    base_url: "https://www.naukri.com/job-listings"
+    auth: none
+    rate_limit_per_min: 15
+    css_selectors:
+      listing: "div.jobTuple"
+      title: "a.title"
+      company: "a.subTitle"
+      location: "span.location"
+      url: "a.title"
+      description: "span.job-description"
+    pagination:
+      type: "query_param"
+      param: "page"
