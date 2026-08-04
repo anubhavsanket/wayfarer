@@ -191,16 +191,13 @@ def extract_resume_graph(bullets: list[dict[str, str]], skills_raw: str = "") ->
                 sid = _add_node("skill", s)
                 skill_ids.append(sid)
 
-    # Extract from bullets — use the bullet's own ID (e.g. "b0", "b1") as
-    # the node ID so subgraph_for_keywords can match against parsed.bullets.
+    # Extract from bullets
     bullet_ids: list[str] = []
     for bullet in bullets:
         text = bullet.get("text", "")
         if not text.strip():
             continue
-        bid = bullet.get("id", f"b{len(bullet_ids)}")
-        nodes[bid] = ResumeNode(id=bid, kind="project", text=text.strip(),
-                                metadata={"section": bullet.get("section", "")})
+        bid = _add_node("project", text.strip(), section=bullet.get("section", ""))
         bullet_ids.append(bid)
 
         # Extract metrics from this bullet
