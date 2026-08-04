@@ -26,9 +26,11 @@ class Settings(BaseSettings):
 
     # Model selection per complexity tier
     # For Ollama: both tiers use the same model (local GPU has 4GB VRAM).
+    # For NVIDIA NIM: both tiers use the 8B model because the free tier rate-limits
+    # the 70B model (ResourceExhausted: Worker local total request limit reached).
     LLM_MODELS: dict = {
         "simple": {"nvidia": "meta/llama-3.1-8b-instruct", "openrouter": "meta-llama/llama-3.1-8b-instruct", "ollama": "llama3.2:3b"},
-        "complex": {"nvidia": "meta/llama-3.3-70b-instruct", "openrouter": "anthropic/claude-3.5-sonnet", "ollama": "llama3.2:3b"}
+        "complex": {"nvidia": "meta/llama-3.1-8b-instruct", "openrouter": "meta-llama/llama-3.1-8b-instruct", "ollama": "llama3.2:3b"}
     }
 
     # Embedding
