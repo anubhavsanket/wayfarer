@@ -6,23 +6,22 @@ job_boards:
   - name: bluedoor
     enabled: true
     type: rest_api
-    base_url: "https://api.bluedoor.sh/job-postings/v1/postings"
+    base_url: "https://api.bluedoor.sh/job-postings/v1/jobs/search"
     auth: api_key
     api_key_env: "BLUEDOOR_API_KEY"
-    auth_header: "Authorization: Bearer"
-    rate_limit_per_min: 60
+    rate_limit_per_min: 100  # free tier: 100 req/s, burst 500
     field_mapping:
-      title: "$.job_title"
-      company: "$.employer_name"
-      location: "$.location.city"
-      remote_type: "$.location.remote"
+      id: "$.job_id"
+      title: "$.title"
+      company: "$.org_name"       # falls back to provider if empty
+      location: "$.city"
+      remote_type: "$.remote_policy"
       url: "$.apply_url"
-      description: "$.description_text"
+      description: "$.description" # falls back to empty if missing
     pagination:
-      type: "offset"
-      param: "page"
-    query_params:
-      q: "python"  # default search query
+      type: "none"
+      param: ""
+      max_pages: 1
 
   - name: linkedin_guest
     enabled: true

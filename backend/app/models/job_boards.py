@@ -28,7 +28,7 @@ logger = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 
 class PaginationConfig(BaseModel):
-    type: Literal["offset", "start_offset", "query_param"] = "offset"
+    type: Literal["offset", "start_offset", "query_param", "none"] = "offset"
     param: str = "page"
     start_value: int = 0
     step: int = 10
@@ -167,15 +167,20 @@ class JobBoardConnector:
         max_pages = pages or pag.max_pages
         value = pag.start_value
 
-        for _ in range(max_pages):
+        for page_num in range(max_pages):
             params: dict[str, Any] = dict(board.extra_params)
             if keywords:
                 params["q"] = keywords
             if location:
                 params["location"] = location
 
-            # Inject pagination parameter
-            params[pag.param] = value
+            # Add limit parameter for APIs that support it
+            if board.name == "bluedoor":
+                params["limit"] = 20
+
+            # Inject pagination parameter (skip for "none" pagination)
+            if pag.type != "none" and pag.param:
+                params[pag.param] = value
 
             try:
                 resp = await self._client.get(
@@ -215,11 +220,16 @@ class JobBoardConnector:
         if not title and not url:
             return None
 
+        # Fall back to 'provider' field when org_name is empty (bluedoor quirk)
+        company = str(_resolve_path(raw, fm.company) or "")
+        if not company or company == "None":
+            company = str(_resolve_path(raw, "$.provider") or "Unknown")
+
         return JobPosting(
             id=f"{board.name}:{url or title}",
             source=board.name,
             title=str(title),
-            company=str(_resolve_path(raw, fm.company) or "Unknown"),
+            company=company,
             url=str(url),
             location=str(_resolve_path(raw, fm.location) or ""),
             remote_type=str(_resolve_path(raw, fm.remote_type) or ""),

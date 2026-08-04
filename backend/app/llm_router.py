@@ -175,9 +175,12 @@ class LLMRouter:
         """Embed text locally via Ollama (nomic-embed-text)."""
         url = f"{settings.OLLAMA_ENDPOINT}/api/embeddings"
         try:
+            # Embedding calls use a longer timeout — Ollama can take 30s+
+            # to load a model on cold start, then it's fast.
             resp = await self._client.post(
                 url,
                 json={"model": settings.EMBEDDING_MODEL, "prompt": text},
+                timeout=httpx.Timeout(120.0),
             )
             resp.raise_for_status()
             return resp.json()["embedding"]
