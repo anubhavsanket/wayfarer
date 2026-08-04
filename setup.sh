@@ -45,8 +45,6 @@ fi
 if [ ! -f ".env" ]; then
     echo -e "${YELLOW}Creating .env from template...${NC}"
     cp .env.example .env
-    # Fix Windows line endings (\r\n → \n) — Docker Compose can't parse \r
-    sed -i 's/\r$//' .env 2>/dev/null || sed -i '' 's/\r$//' .env
     echo -e "${GREEN}Created .env — edit it to add your API keys.${NC}"
     echo ""
     echo "Required keys (at least one LLM provider):"
@@ -73,15 +71,12 @@ sleep 30
 
 # Pull embedding model
 echo -e "${YELLOW}Pulling embedding model (first time only)...${NC}"
-if ! docker compose exec ollama ollama pull nomic-embed-text; then
-    echo -e "${RED}Failed to pull embedding model. Check that Ollama is running.${NC}"
-fi
+docker compose exec ollama ollama pull nomic-embed-text 2>/dev/null || true
 
-# Pull chat models (for Ollama mode) — match config.py LLM_MODELS defaults
+# Pull chat model (for Ollama mode)
 if grep -q "LLM_PROVIDER=ollama" .env; then
-    echo -e "${YELLOW}Pulling chat models for local inference...${NC}"
-    docker compose exec ollama ollama pull qwen2.5:1.5b || echo -e "${RED}Failed to pull qwen2.5:1.5b${NC}"
-    docker compose exec ollama ollama pull qwen3:1.7b || echo -e "${RED}Failed to pull qwen3:1.7b${NC}"
+    echo -e "${YELLOW}Pulling chat model for local inference...${NC}"
+    docker compose exec ollama ollama pull llama3.2:3b 2>/dev/null || true
 fi
 
 # Health check
