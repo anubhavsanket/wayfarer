@@ -197,7 +197,17 @@ class JobBoardConnector:
                     logger.info("Parsed %d postings from HTML for %s", len(items), board.name)
                 else:
                     data = resp.json()
-                    items = data if isinstance(data, list) else data.get("results", data.get("data", []))
+                    if isinstance(data, list):
+                        items = data
+                    else:
+                        # Try common keys for job arrays
+                        items = None
+                        for key in ("results", "data", "jobs", "postings"):
+                            if key in data and isinstance(data[key], list):
+                                items = data[key]
+                                break
+                        if items is None:
+                            items = []
 
             except (httpx.HTTPStatusError, httpx.TimeoutException, httpx.DecodingError) as exc:
                 logger.warning("Failed to fetch from %s: %s", board.name, exc)

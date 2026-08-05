@@ -3,21 +3,63 @@
 # Adding a new board = adding an entry here, not writing new fetch/parse code.
 
 job_boards:
+  # ── Sources with JD descriptions (better matching) ──────────────────
+
+  - name: remoteok
+    enabled: true
+    type: rest_api
+    base_url: "https://remoteok.com/api"
+    auth: none
+    rate_limit_per_min: 30
+    field_mapping:
+      id: "$.id"
+      title: "$.position"
+      company: "$.company"
+      location: "$.location"
+      url: "$.url"
+      description: "$.description"
+      remote_type: "$.remote"
+    pagination:
+      type: "none"
+      param: ""
+      max_pages: 1
+
+  - name: remotive
+    enabled: true
+    type: rest_api
+    base_url: "https://remotive.com/api/remote-jobs"
+    auth: none
+    rate_limit_per_min: 30
+    field_mapping:
+      id: "$.id"
+      title: "$.title"
+      company: "$.company_name"
+      location: "$.candidate_required_location"
+      url: "$.url"
+      description: "$.description"
+      remote_type: "$.job_type"
+    pagination:
+      type: "none"
+      param: ""
+      max_pages: 1
+
+  # ── Sources without JD descriptions (title/location only) ───────────
+
   - name: bluedoor
     enabled: true
     type: rest_api
     base_url: "https://api.bluedoor.sh/job-postings/v1/jobs/search"
     auth: api_key
     api_key_env: "BLUEDOOR_API_KEY"
-    rate_limit_per_min: 100  # free tier: 100 req/s, burst 500
+    rate_limit_per_min: 100
     field_mapping:
       id: "$.job_id"
       title: "$.title"
-      company: "$.org_name"       # falls back to provider if empty
+      company: "$.org_name"
       location: "$.city"
       remote_type: "$.remote_policy"
       url: "$.apply_url"
-      description: "$.description" # falls back to empty if missing
+      description: "$.description"
     pagination:
       type: "none"
       param: ""
@@ -40,35 +82,3 @@ job_boards:
     pagination:
       type: "start_offset"
       param: "start"
-
-  # Adding a new board = adding an entry here, not writing new fetch/parse code
-  - name: custom_board_example
-    enabled: false
-    type: rest_api
-    base_url: "https://example-jobboard.com/api/jobs"
-    auth: api_key
-    api_key_env: "CUSTOM_BOARD_API_KEY"
-    rate_limit_per_min: 30
-    field_mapping:
-      title: "$.title"
-      company: "$.company"
-      location: "$.city"
-      url: "$.link"
-
-  # Example of an HTML scrape board (CSS selectors instead of field_mapping)
-  - name: naukri_example
-    enabled: false
-    type: html_scrape
-    base_url: "https://www.naukri.com/job-listings"
-    auth: none
-    rate_limit_per_min: 15
-    css_selectors:
-      listing: "div.jobTuple"
-      title: "a.title"
-      company: "a.subTitle"
-      location: "span.location"
-      url: "a.title"
-      description: "span.job-description"
-    pagination:
-      type: "query_param"
-      param: "page"
