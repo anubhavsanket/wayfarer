@@ -18,6 +18,7 @@ is the same function Stage 2 uses — one owned matching engine.
 from __future__ import annotations
 
 import logging
+import re
 from typing import Any
 
 from ..config import settings
