@@ -145,7 +145,9 @@ async def _compute_semantic_scores(
             scored.append((posting, 0.0))
             continue
         try:
-            jd_vec = await router.embed(posting.description)
+            # Truncate to ~8000 chars (~2000 tokens) to stay within model limits
+            desc = posting.description[:8000]
+            jd_vec = await router.embed(desc)
             score = cosine_similarity(resume_vec, jd_vec)
         except Exception as exc:
             logger.warning("JD embed failed for %s: %s", posting.id, exc)
@@ -209,7 +211,10 @@ Job posting:
 
 
 async def _classify_experience(jd_text: str) -> dict[str, Any]:
-    """Classify experience level using a small local LLM (qwen3:0.6b)."""
+    """Classify experience level using a small local LLM (qwen3:0.6b).
+
+    Falls back to regex-based detection when the LLM is unavailable.
+    """
     VALID_LEVELS = {"fresher", "junior", "mid", "senior", "unclear"}
     try:
         resp = await router.chat(
@@ -227,8 +232,44 @@ async def _classify_experience(jd_text: str) -> dict[str, Any]:
             "confidence": result.get("confidence", 0.0),
         }
     except Exception as exc:
-        logger.debug("Experience classification failed: %s", exc)
-        return {"experience_level": "unclear", "min_experience_years": None, "confidence": 0.0}
+        logger.debug("LLM classification failed (%s), using regex fallback", exc)
+        return _classify_experience_regex(jd_text)
+
+
+def _classify_experience_regex(text: str) -> dict[str, Any]:
+    """Regex-based experience level detection (fallback when LLM unavailable)."""
+    text_lower = text.lower()
+
+    # Senior indicators
+    if re.search(r"\b(senior|lead|principal|staff|head of|director)\b", text_lower):
+        return {"experience_level": "senior", "min_experience_years": 5.0, "confidence": 0.6}
+
+    # Mid indicators
+    if re.search(r"\b(mid[-\s]?level|3[-+]?\s*years|5[-+]?\s*years)\b", text_lower):
+        return {"experience_level": "mid", "min_experience_years": 3.0, "confidence": 0.5}
+
+    # Junior indicators
+    if re.search(r"\b(junior|entry[-\s]?level|1[-+]?\s*years|2[-+]?\s*years)\b", text_lower):
+        return {"experience_level": "junior", "min_experience_years": 1.0, "confidence": 0.5}
+
+    # Fresher indicators
+    if re.search(r"\b(fresher|graduate|no experience|intern|trainee|0[-+]?\s*years)\b", text_lower):
+        return {"experience_level": "fresher", "min_experience_years": 0.0, "confidence": 0.6}
+
+    # Experience year patterns
+    year_match = re.search(r"(\d+)\s*(?:to|-)\s*(\d+)\s*years?", text_lower)
+    if year_match:
+        min_years = int(year_match.group(1))
+        if min_years <= 1:
+            return {"experience_level": "fresher", "min_experience_years": float(min_years), "confidence": 0.5}
+        elif min_years <= 3:
+            return {"experience_level": "junior", "min_experience_years": float(min_years), "confidence": 0.5}
+        elif min_years <= 5:
+            return {"experience_level": "mid", "min_experience_years": float(min_years), "confidence": 0.5}
+        else:
+            return {"experience_level": "senior", "min_experience_years": float(min_years), "confidence": 0.5}
+
+    return {"experience_level": "unclear", "min_experience_years": None, "confidence": 0.0}
 
 
 async def _match_one(
