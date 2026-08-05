@@ -340,6 +340,7 @@ async def jobs_match(
 
     # Mock data for testing the UI when board APIs are unavailable
     if test:
+        from .models.schemas import LocationPreference as LP
         now = datetime.now(timezone.utc)
         mock_matches = [
             JM(job_id="mock-1", title="Senior ML Engineer", company="Acme AI", source="bluedoor",
@@ -359,8 +360,19 @@ async def jobs_match(
                location="Pune, India", match_score=0.64, location_match=LM.RELOCATION_REQUIRED,
                top_gaps=["transformers", "hugging face"], apply_url="https://example.com/jobs/5"),
         ]
+        # Apply filters to mock data so the UI filters actually work
+        filtered = mock_matches
+        if min_score > 0:
+            filtered = [m for m in filtered if m.match_score >= min_score]
+        location_pref = LocationPreference(
+            mode=location_mode,
+            cities=[c.strip() for c in cities.split(",") if c.strip()],
+            remote_ok=remote_ok,
+        )
+        from .services.job_matcher import _apply_location_preference
+        filtered = _apply_location_preference(filtered, location_pref)
         return JobMatchResponse(
-            matches=mock_matches[:limit],
+            matches=filtered[:limit],
             aggregate_gaps=[
                 AggregateGap(skill="kubernetes", missing_in_pct=0.6),
                 AggregateGap(skill="pytorch lightning", missing_in_pct=0.4),
