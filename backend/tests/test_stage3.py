@@ -201,7 +201,9 @@ class TestJobBoardRegistry:
         from backend.app.models.job_boards import load_registry
         registry = load_registry("config/job_boards.yaml")
         enabled = [b for b in registry.job_boards if b.enabled]
-        assert all(b.name in ("bluedoor", "linkedin_guest") for b in enabled)
+        # All enabled boards must be known sources (no examples/templates)
+        known = {"bluedoor", "linkedin_guest", "remoteok", "remotive"}
+        assert all(b.name in known for b in enabled)
 
     def test_adding_board_is_config_change_not_code(self):
         """PRD §9.7: adding a new board = adding an entry to job_boards.yaml."""
