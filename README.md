@@ -127,6 +127,62 @@ behalf.
 
 ---
 
+## Project layout
+
+```
+wayfarer/
+├── backend/                         # FastAPI service
+│   ├── app/
+│   │   ├── main.py                  # FastAPI entry, health, lifespan
+│   │   ├── config.py                # Pydantic Settings (.env-driven)
+│   │   ├── llm_router.py            # Multi-provider inference router
+│   │   ├── vector_store.py          # Multi-collection ChromaDB wrapper
+│   │   ├── models/
+│   │   │   ├── schemas.py           # Pydantic request/response models
+│   │   │   └── job_boards.py        # Board registry models + connector
+│   │   ├── core/
+│   │   │   ├── confidence.py        # Tier classifier + match_keyword_to_bullet
+│   │   │   └── resume_graph.py      # Graph-based structured resume memory
+│   │   ├── services/
+│   │   │   ├── search_api.py        # Tavily + Brave clients
+│   │   │   ├── web_fetch.py         # Crawl4AI concurrency-capped fetcher
+│   │   │   ├── search_service.py    # Stage 1 orchestrator
+│   │   │   ├── resume_parser.py     # PDF/DOCX parsing + ATS simulation
+│   │   │   ├── ats_checker.py       # Stage 2 orchestrator
+│   │   │   ├── resume_saver.py      # Save with/without overwrite
+│   │   │   ├── resume_store.py      # Upload persistence
+│   │   │   ├── job_matcher.py       # Stage 3 orchestrator + Fresher Mode
+│   │   │   └── legitimacy.py        # Ghost / no-sponsorship checks
+│   │   └── utils/
+│   │       └── cache.py             # Content-hash memoization
+│   ├── tests/                       # 48 tests (36 unit + 12 E2E)
+│   ├── requirements.txt
+│   ├── pytest.ini
+│   └── Dockerfile
+├── frontend/                        # React + Vite + TypeScript + Tailwind
+│   ├── src/
+│   │   ├── App.tsx                  # Tabbed UI shell (Search/Resume/Jobs/Settings)
+│   │   ├── pages/
+│   │   │   ├── Search.tsx           # Stage 1 UI
+│   │   │   ├── ResumeCheck.tsx      # Stage 2 UI
+│   │   │   ├── JobMatch.tsx         # Stage 3 UI + Fresher Mode toggle
+│   │   │   └── Settings.tsx         # API keys + resume upload
+│   │   ├── components/ui/           # Button, Card primitives
+│   │   ├── stores/settings.ts       # localStorage-backed API key store
+│   │   └── lib/{api.ts, types.ts, utils.ts}
+│   ├── Dockerfile + nginx.conf
+│   └── package.json
+├── config/
+│   ├── settings.yaml                # Main config (informational)
+│   └── job_boards.yaml              # Stage 3 board registry
+├── docker-compose.yml               # 5-service stack
+├── setup.sh                         # One-command setup
+├── .env.example                     # Copy to .env, fill in keys
+└── README.md
+```
+
+---
+
 ## Quick start (Docker Compose)
 
 ### Prerequisites
@@ -168,6 +224,9 @@ docker compose exec ollama ollama pull nomic-embed-text
 
 # Chat model (only if using Ollama for inference)
 docker compose exec ollama ollama pull llama3.2:3b
+
+# Fresher Mode classifier (optional, only needed for experience-level filtering)
+docker compose exec ollama ollama pull qwen3:0.6b
 ```
 
 ### 4. Verify
@@ -179,7 +238,14 @@ curl http://localhost:8000/health
 
 ### 5. Use it
 
-- **Frontend:** http://localhost:3000 — Settings tab for API keys, then Search/Resume/Job Match tabs
+1. Open **http://localhost:3000**
+2. Go to **Settings** tab — enter your API keys and upload your main resume
+3. Go to **Search** tab — ask any question
+4. Go to **Resume Check** tab — paste a JD to get ATS analysis (resume is already loaded)
+5. Go to **Job Match** tab — see live postings ranked by fit (uses your resume automatically)
+
+The resume you upload in Settings is used across all stages — no need to re-upload.
+
 - **API docs:** http://localhost:8000/docs — interactive Swagger UI
 
 ---
@@ -349,15 +415,16 @@ is a config change, not a code change.
 ## Testing
 
 ```bash
-# Unit tests (no Docker required, needs Python 3.11)
+# Unit tests (needs Python 3.11 venv, no Docker required)
 cd backend
+source .venv/bin/activate  # or .venv\Scripts\activate on Windows
 python -m pytest tests/test_stage1.py tests/test_stage2.py tests/test_stage3.py -v
 
 # E2E tests (requires all Docker services running)
 python -m pytest tests/test_docker_e2e.py -v
 ```
 
-**Current status: 48 tests** (36 unit + 12 E2E), all passing.
+**Test suite: 48 tests** (9 Stage1 + 11 Stage2 + 16 Stage3 + 12 E2E Docker), all passing.
 
 ---
 
