@@ -278,6 +278,15 @@ def parse_resume(file_path: str | Path) -> ParsedResume:
     raw_text = "\n".join(raw_lines)
     sections, bullets = _parse_sections(raw_lines)
 
+    # Guard: if no text was extracted, the PDF is likely image-based or
+    # uses a non-standard encoding. Raise a clear error.
+    if not raw_text.strip():
+        raise ValueError(
+            f"Could not extract text from {ext} file. "
+            "The file may be image-based (scanned) or use a non-standard "
+            "format. Please upload a DOCX file or a text-based PDF."
+        )
+
     # Extract contact info
     contact = _extract_contact(raw_lines)
 

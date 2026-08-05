@@ -302,6 +302,10 @@ async def set_primary_resume(
     try:
         parsed = parse_resume(str(saved_path))
         resume_store.save_parsed(resume_id, parsed)
+    except ValueError as exc:
+        # Parser explicitly rejected the file (e.g. image-based PDF) —
+        # surface the error so the user can try DOCX instead.
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
     except Exception as exc:
         logger.warning("Primary resume parse failed: %s (storing raw only)", exc)
 
