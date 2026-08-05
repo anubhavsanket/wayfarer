@@ -67,6 +67,7 @@ class JobBoardEntry(BaseModel):
     pagination: PaginationConfig = Field(default_factory=PaginationConfig)
     extra_params: dict[str, str] = Field(default_factory=dict)
     extra_headers: dict[str, str] = Field(default_factory=dict)
+    default_remote_type: str = ""  # Fixed remote_type for boards where all jobs are remote
 
 
 class JobBoardRegistry(BaseModel):
@@ -296,7 +297,7 @@ class JobBoardConnector:
             company=company,
             url=str(url),
             location=str(_resolve_path(raw, fm.location) or ""),
-            remote_type=str(_resolve_path(raw, fm.remote_type) or ""),
+            remote_type=board.default_remote_type or str(_resolve_path(raw, fm.remote_type) or ""),
             description=str(_resolve_path(raw, fm.description) or ""),
             fetched_at=datetime.now(timezone.utc),
         )

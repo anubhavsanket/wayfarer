@@ -11,6 +11,7 @@ job_boards:
     base_url: "https://remoteok.com/api"
     auth: none
     rate_limit_per_min: 30
+    default_remote_type: "remote"  # All Remote OK jobs are remote
     field_mapping:
       id: "$.id"
       title: "$.position"
@@ -30,6 +31,7 @@ job_boards:
     base_url: "https://remotive.com/api/remote-jobs"
     auth: none
     rate_limit_per_min: 30
+    default_remote_type: "remote"  # All Remotive jobs are remote
     field_mapping:
       id: "$.id"
       title: "$.title"
