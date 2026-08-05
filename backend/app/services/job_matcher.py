@@ -120,10 +120,18 @@ def _normalise_remote_type(raw: str | None) -> str:
 # Embedding / scoring
 # ---------------------------------------------------------------------------
 
-async def _embed_resume(parsed: Any) -> list[float]:
-    """Embed the resume (concatenated bullet texts) once."""
+async def _embed_resume(parsed: Any) -> list[float] | None:
+    """Embed the resume (concatenated bullet texts) once.
+
+    Returns None if embedding is unavailable (no model pulled, no API key)
+    so the caller can fall back to keyword-only scoring.
+    """
     text = "\n".join(b.text for b in parsed.bullets) or parsed.ats_visible_text
-    return await router.embed(text)
+    try:
+        return await router.embed(text)
+    except Exception as exc:
+        logger.warning("Resume embedding failed: %s — falling back to keyword-only scoring", exc)
+        return None
 
 
 async def _compute_semantic_scores(
@@ -226,7 +234,7 @@ async def _classify_experience(jd_text: str) -> dict[str, Any]:
 async def _match_one(
     posting: JobPosting,
     parsed: Any,
-    resume_vec: list[float],
+    resume_vec: list[float] | None,
     semantic_score: float,
 ) -> JobMatch:
     """Compute the full hybrid match for a single posting (top-K only)."""
@@ -396,11 +404,17 @@ async def match_jobs(
     logger.info("After pipeline cleanup: %d postings", len(postings))
 
     # 2. Embedding similarity (rank all, keep top-K)
+    # resume_vec may be None if the embedding model isn't available
     resume_vec = await _embed_resume(parsed)
-    scored = await _compute_semantic_scores(resume_vec, postings)
-    scored.sort(key=lambda t: t[1], reverse=True)
-    top_k = scored[:TOP_K_EMBEDDING_SURVIVORS]
-    logger.info("Top-K after semantic score: %d postings (of %d total)", len(top_k), len(scored))
+    if resume_vec is not None:
+        scored = await _compute_semantic_scores(resume_vec, postings)
+        scored.sort(key=lambda t: t[1], reverse=True)
+        top_k = scored[:TOP_K_EMBEDDING_SURVIVORS]
+        logger.info("Top-K after semantic score: %d postings (of %d total)", len(top_k), len(scored))
+    else:
+        # No embeddings available — use keyword-only scoring on all postings
+        logger.info("Embeddings unavailable; using keyword-only scoring on all %d postings", len(postings))
+        top_k = [(p, 0.0) for p in postings]
 
     # 3. LLM keyword overlap on top-K only (cost control)
     matches: list[JobMatch] = []
