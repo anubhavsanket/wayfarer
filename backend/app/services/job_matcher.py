@@ -378,12 +378,17 @@ async def match_jobs(
     location_preference: LocationPreference | None = None,
     limit: int = 20,
     fresher_only: bool = False,
+    max_age_days: int = 30,
+    min_score: float = 0.0,
 ) -> JobMatchResponse:
     """Rank live postings by fit against a resume, with location filtering.
 
     When ``fresher_only=True`` (§15.1), only postings classified as "fresher"
     or "junior" are surfaced in ``matches``. Postings classified as "unclear"
     go into ``unclear_matches`` so they aren't silently dropped.
+
+    ``max_age_days`` controls how old a posting can be (drops older ones).
+    ``min_score`` filters out results below this match score threshold.
     """
     pref = location_preference or LocationPreference()
     limit = min(limit, 100)
@@ -400,8 +405,8 @@ async def match_jobs(
     if not postings:
         return JobMatchResponse(matches=[], aggregate_gaps=[])
     postings = _normalise_postings(postings)
-    postings = _drop_stale(postings)
-    logger.info("After pipeline cleanup: %d postings", len(postings))
+    postings = _drop_stale(postings, ttl_days=max_age_days)
+    logger.info("After pipeline cleanup: %d postings (max_age=%d days)", len(postings), max_age_days)
 
     # 2. Embedding similarity (rank all, keep top-K)
     # resume_vec may be None if the embedding model isn't available
@@ -424,6 +429,10 @@ async def match_jobs(
 
     # 4. Location filter + re-rank
     matches = _apply_location_preference(matches, pref)
+
+    # 4b. Minimum score filter — hide irrelevant listings
+    if min_score > 0:
+        matches = [m for m in matches if m.match_score >= min_score]
 
     # 5. Fresher Mode: separate confirmed vs unclear (§15.1)
     unclear_matches: list[JobMatch] = []

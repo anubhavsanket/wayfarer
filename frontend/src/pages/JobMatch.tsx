@@ -2,7 +2,7 @@ import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import {
   Briefcase, ExternalLink, AlertTriangle, ChevronDown, ChevronUp,
-  GraduationCap, MapPin, ToggleLeft, ToggleRight,
+  GraduationCap, MapPin, ToggleLeft, ToggleRight, SlidersHorizontal,
 } from "lucide-react";
 
 import { api } from "@/lib/api";
@@ -99,6 +99,14 @@ export default function JobMatchPage() {
   const [testMode, setTestMode] = useState(true);
   const [fresherOnly, setFresherOnly] = useState(false);
   const [showUnclear, setShowUnclear] = useState(false);
+  const [showFilters, setShowFilters] = useState(false);
+
+  // Filter state
+  const [maxAgeDays, setMaxAgeDays] = useState(30);
+  const [minScore, setMinScore] = useState(0);
+  const [cityFilter, setCityFilter] = useState("");
+  const [locationMode, setLocationMode] = useState("specific_city");
+  const [remoteOk, setRemoteOk] = useState(false);
 
   // FR2.12 (§8.6): resolve primary resume from backend
   const { data: primary } = useQuery({
@@ -112,10 +120,18 @@ export default function JobMatchPage() {
   const hasResume = !!primary || !!resumeId;
 
   const { data, isLoading, error, refetch } = useQuery({
-    queryKey: ["jobs", resumeId, testMode, fresherOnly, primary?.resume_id],
-    queryFn: () => api.jobsMatch(resumeId, 20, testMode, fresherOnly),
+    queryKey: ["jobs", resumeId, testMode, fresherOnly, primary?.resume_id, maxAgeDays, minScore, cityFilter, locationMode, remoteOk],
+    queryFn: () => api.jobsMatch(resumeId, 50, testMode, fresherOnly, {
+      maxAgeDays,
+      minScore: minScore / 100,
+      cities: cityFilter,
+      locationMode,
+      remoteOk,
+    }),
     enabled: hasResume,
   });
+
+  const totalResults = (data?.matches?.length ?? 0) + (data?.unclear_matches?.length ?? 0);
 
   return (
     <div className="space-y-6">
@@ -147,7 +163,9 @@ export default function JobMatchPage() {
             No resume uploaded yet. Go to <strong>Settings</strong> → Primary Resume to upload your resume.
           </div>
         )}
-        <div className="flex flex-wrap gap-4 text-xs text-muted-foreground">
+
+        {/* Toggle row */}
+        <div className="flex flex-wrap items-center gap-4 text-xs text-muted-foreground">
           <label className="flex items-center gap-2 cursor-pointer">
             <input
               type="checkbox"
@@ -164,7 +182,116 @@ export default function JobMatchPage() {
             {fresherOnly ? <ToggleRight className="h-4 w-4 text-primary" /> : <ToggleLeft className="h-4 w-4" />}
             Fresher mode
           </button>
+          <button
+            onClick={() => setShowFilters(!showFilters)}
+            className="flex items-center gap-1 cursor-pointer"
+          >
+            <SlidersHorizontal className="h-4 w-4" />
+            Filters
+            {(maxAgeDays !== 30 || minScore !== 0 || cityFilter) && (
+              <span className="rounded-full bg-primary px-1.5 py-0.5 text-[10px] font-medium text-primary-foreground">
+                active
+              </span>
+            )}
+          </button>
         </div>
+
+        {/* Expanded filters */}
+        {showFilters && (
+          <div className="mt-4 space-y-4 rounded-md border p-4">
+            {/* Location filter */}
+            <div className="space-y-1.5">
+              <label className="text-sm font-medium">Location</label>
+              <div className="flex gap-2">
+                <select
+                  value={locationMode}
+                  onChange={(e) => setLocationMode(e.target.value)}
+                  className="rounded-md border bg-background px-2 py-1.5 text-sm"
+                >
+                  <option value="specific_city">Specific city</option>
+                  <option value="remote_only">Remote only</option>
+                  <option value="hybrid">Hybrid</option>
+                  <option value="open_to_relocation">Open to relocation</option>
+                </select>
+                {locationMode === "specific_city" && (
+                  <input
+                    type="text"
+                    value={cityFilter}
+                    onChange={(e) => setCityFilter(e.target.value)}
+                    placeholder="e.g. Bengaluru"
+                    className="flex-1 rounded-md border bg-background px-3 py-1.5 text-sm outline-none focus:ring-2 focus:ring-ring"
+                  />
+                )}
+              </div>
+              {locationMode === "specific_city" && (
+                <label className="flex items-center gap-2 text-xs text-muted-foreground cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={remoteOk}
+                    onChange={(e) => setRemoteOk(e.target.checked)}
+                    className="rounded"
+                  />
+                  Include remote postings
+                </label>
+              )}
+            </div>
+
+            {/* Posting age slider */}
+            <div className="space-y-1.5">
+              <label className="text-sm font-medium">
+                Posting age: up to {maxAgeDays} day{maxAgeDays !== 1 ? "s" : ""} old
+              </label>
+              <input
+                type="range"
+                min={1}
+                max={90}
+                value={maxAgeDays}
+                onChange={(e) => setMaxAgeDays(parseInt(e.target.value))}
+                className="w-full accent-primary"
+              />
+              <div className="flex justify-between text-[10px] text-muted-foreground">
+                <span>1 day</span>
+                <span>30 days</span>
+                <span>90 days</span>
+              </div>
+            </div>
+
+            {/* Minimum score slider */}
+            <div className="space-y-1.5">
+              <label className="text-sm font-medium">
+                Minimum match: {minScore}%
+              </label>
+              <input
+                type="range"
+                min={0}
+                max={80}
+                step={5}
+                value={minScore}
+                onChange={(e) => setMinScore(parseInt(e.target.value))}
+                className="w-full accent-primary"
+              />
+              <div className="flex justify-between text-[10px] text-muted-foreground">
+                <span>Show all</span>
+                <span>40%</span>
+                <span>80%</span>
+              </div>
+            </div>
+
+            {/* Reset filters */}
+            <button
+              onClick={() => {
+                setMaxAgeDays(30);
+                setMinScore(0);
+                setCityFilter("");
+                setLocationMode("specific_city");
+                setRemoteOk(false);
+              }}
+              className="text-xs text-muted-foreground underline hover:text-foreground"
+            >
+              Reset all filters
+            </button>
+          </div>
+        )}
       </Card>
 
       {/* Loading / Error */}
@@ -178,9 +305,9 @@ export default function JobMatchPage() {
       {/* Results */}
       {data && (
         <>
-          {data.matches.length === 0 && !isLoading && (
+          {totalResults === 0 && !isLoading && (
             <Card className="p-6 text-center text-sm text-muted-foreground">
-              No matches found. Upload a resume first, then try again.
+              No matches found. Try adjusting your filters or uploading a different resume.
             </Card>
           )}
 
@@ -189,6 +316,7 @@ export default function JobMatchPage() {
               <p className="mb-3 text-sm font-medium text-muted-foreground">
                 {data.matches.length} confirmed match{data.matches.length !== 1 ? "es" : ""}
                 {fresherOnly ? " (fresher/junior only)" : ""}
+                {minScore > 0 ? ` (≥${minScore}% match)` : ""}
               </p>
               <div className="space-y-3">
                 {data.matches.map((job: any) => (

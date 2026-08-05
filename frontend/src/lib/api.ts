@@ -63,12 +63,23 @@ export const api = {
 
   // Stage 3 — Job matching
   // FR2.12 (§8.6): resumeId is optional — omit to use primary resume
-  jobsMatch: (resumeId = "", limit = 20, test = false, fresherOnly = false) => {
+  jobsMatch: (
+    resumeId = "",
+    limit = 20,
+    test = false,
+    fresherOnly = false,
+    opts: { maxAgeDays?: number; minScore?: number; cities?: string; locationMode?: string; remoteOk?: boolean } = {},
+  ) => {
     const params = new URLSearchParams();
     if (resumeId) params.set("resume_id", resumeId);
     params.set("limit", limit.toString());
     if (test) params.set("test", "true");
     if (fresherOnly) params.set("fresher_only", "true");
+    if (opts.maxAgeDays != null) params.set("max_age_days", opts.maxAgeDays.toString());
+    if (opts.minScore != null) params.set("min_score", opts.minScore.toString());
+    if (opts.cities) params.set("cities", opts.cities);
+    if (opts.locationMode) params.set("location_mode", opts.locationMode);
+    if (opts.remoteOk != null) params.set("remote_ok", opts.remoteOk.toString());
     return request<JobMatchResponse>(`/api/v1/jobs/match?${params.toString()}`);
   },
 };
