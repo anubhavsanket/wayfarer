@@ -340,7 +340,7 @@ async def jobs_match(
 
     # Mock data for testing the UI when board APIs are unavailable
     if test:
-        from .models.schemas import LocationPreference as LP
+        from .models.schemas import LocationPreference
         now = datetime.now(timezone.utc)
         mock_matches = [
             JM(job_id="mock-1", title="Senior ML Engineer", company="Acme AI", source="bluedoor",
