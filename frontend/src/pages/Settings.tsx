@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Settings as SettingsIcon, Eye, EyeOff, Save, RotateCcw, CheckCircle2, Upload } from "lucide-react";
 import { useSettings } from "@/stores/settings";

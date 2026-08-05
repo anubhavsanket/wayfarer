@@ -108,7 +108,7 @@ export default function JobMatchPage() {
   });
 
   const resumeId = localStorage.getItem("resume_id") ?? "";
-  const resumeFileName = primary?.filename || localStorage.getItem("resume_filename") ?? "";
+  const resumeFileName = primary?.filename || (localStorage.getItem("resume_filename") ?? "");
   const hasResume = !!primary || !!resumeId;
 
   const { data, isLoading, error, refetch } = useQuery({
