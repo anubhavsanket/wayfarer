@@ -10,6 +10,9 @@ multi-column sections that vanish).
 
 Acceptance criterion: "A resume with a table-based skills section shows a
 structural-loss flag on that section."
+
+OCR fallback: when pdfplumber extracts no text (image-based PDFs),
+pages are rendered to images via PyMuPDF and OCR'd with Tesseract.
 """
 from __future__ import annotations
 
@@ -115,6 +118,9 @@ def _parse_pdf(file_path: str) -> tuple[list[str], dict[int, str], list[dict[str
 
     page_texts: page number → layout-blind text (simulating a naive ATS parser)
     tables: list of {page, headers, rows} for every table found
+
+    When pdfplumber extracts no text (image-based / scanned PDFs), falls
+    back to OCR via PyMuPDF + Tesseract.
     """
     all_lines: list[str] = []
     page_texts: dict[int, str] = {}
@@ -144,7 +150,53 @@ def _parse_pdf(file_path: str) -> tuple[list[str], dict[int, str], list[dict[str
                     ),
                 })
 
+    # OCR fallback for image-based PDFs where pdfplumber extracts no text
+    total_chars = sum(len(t) for t in page_texts.values())
+    if total_chars == 0:
+        logger.info("pdfplumber extracted no text — attempting OCR fallback")
+        all_lines, page_texts = _ocr_pdf(file_path)
+
     return all_lines, page_texts, tables
+
+
+def _ocr_pdf(file_path: str) -> tuple[list[str], dict[int, str]]:
+    """OCR an image-based PDF using PyMuPDF (render) + Tesseract (recognise).
+
+    Returns (all_lines, page_texts) in the same shape as _parse_pdf.
+    """
+    try:
+        import fitz  # PyMuPDF
+        import pytesseract
+        from PIL import Image
+        import io
+    except ImportError as exc:
+        logger.warning("OCR dependencies not available (%s) — cannot OCR PDF", exc)
+        return [], {}
+
+    all_lines: list[str] = []
+    page_texts: dict[int, str] = {}
+
+    try:
+        doc = fitz.open(file_path)
+    except Exception as exc:
+        logger.warning("PyMuPDF failed to open PDF: %s", exc)
+        return [], {}
+
+    for page_num in range(len(doc)):
+        page = doc[page_num]
+        # Render page to a high-res image (2x zoom for better OCR accuracy)
+        mat = fitz.Matrix(2, 2)  # 2x scale = 144 DPI effective
+        pix = page.get_pixmap(matrix=mat)
+        img = Image.open(io.BytesIO(pix.tobytes("png")))
+
+        # Run Tesseract OCR
+        text = pytesseract.image_to_string(img, lang="eng")
+        page_texts[page_num + 1] = text
+        all_lines.extend(text.splitlines())
+
+    doc.close()
+    logger.info("OCR extracted %d chars across %d pages", sum(len(t) for t in page_texts.values()), len(page_texts))
+    return all_lines, page_texts
 
 
 def _parse_docx(file_path: str) -> tuple[list[str], dict[int, str], list[dict[str, Any]]]:

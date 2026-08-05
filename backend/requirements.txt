@@ -21,6 +21,9 @@ chromadb==0.5.23
 # Resume parsing (Stage 2)
 pdfplumber==0.11.4
 python-docx==1.1.2
+PyMuPDF==1.25.5
+pytesseract==0.3.13
+Pillow>=10.0.0
 
 # Web scraping (Stage 1)
 crawl4ai==0.6.2

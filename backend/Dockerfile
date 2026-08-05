@@ -2,10 +2,11 @@ FROM python:3.12-slim
 
 WORKDIR /app
 
-# Playwright/Crawl4AI system dependencies (libnss3, libatk, etc.)
+# Playwright/Crawl4AI system dependencies + Tesseract OCR for image-based PDFs
 RUN apt-get update && apt-get install -y --no-install-recommends \
     ca-certificates \
     curl \
+    tesseract-ocr \
     && rm -rf /var/lib/apt/lists/*
 
 COPY backend/requirements.txt .
