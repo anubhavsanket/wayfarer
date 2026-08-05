@@ -263,6 +263,7 @@ async def _match_one(
         location_match=LocationMatch.NONE,
         top_gaps=top_gaps,
         apply_url=posting.url,
+        remote_type=posting.remote_type or "",
         flags=flags,
         experience_level=ExperienceLevel(exp_class["experience_level"]),
         min_experience_years=exp_class["min_experience_years"],
@@ -297,7 +298,11 @@ def _apply_location_preference(
 
     kept: list[JobMatch] = []
     for m in matches:
-        is_remote = "remote" in (m.location or "").lower()
+        # Check both location string and remote_type field
+        is_remote = (
+            "remote" in (m.location or "").lower()
+            or "remote" in (m.remote_type or "").lower()
+        )
 
         if mode == LocationMode.REMOTE_ONLY:
             if not is_remote:
