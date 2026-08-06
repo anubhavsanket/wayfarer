@@ -148,6 +148,7 @@ class Settings(BaseSettings):
 
     # ── User Preferences ────────────────────────────────────────────
     NEEDS_VISA_SPONSORSHIP: bool = False  # FR3.8: set True to flag no-sponsorship postings
+    ENABLE_PROMPT_CACHING: bool = True   # §12.3: enable prompt caching for repeated calls
 
     # ── Helpers ─────────────────────────────────────────────────────────
 

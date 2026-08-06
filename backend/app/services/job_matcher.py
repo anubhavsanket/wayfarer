@@ -499,6 +499,7 @@ async def match_jobs(
     fresher_only: bool = False,
     max_age_days: int = 30,
     min_score: float = 0.0,
+    sources: list[str] | None = None,
 ) -> JobMatchResponse:
     """Rank live postings by fit against a resume, with location filtering.
 
@@ -534,6 +535,13 @@ async def match_jobs(
         return JobMatchResponse(matches=[], aggregate_gaps=[])
     postings = _normalise_postings(postings)
     postings = _drop_stale(postings, ttl_days=max_age_days)
+
+    # Filter by source if specified
+    if sources:
+        source_set = set(s.lower() for s in sources)
+        postings = [p for p in postings if p.source.lower() in source_set]
+        logger.info("Source filter: %d postings from %s", len(postings), sources)
+
     logger.info("After pipeline cleanup: %d postings (max_age=%d days)", len(postings), max_age_days)
 
     # 2. Embedding similarity (rank all, keep top-K)

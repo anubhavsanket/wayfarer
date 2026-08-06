@@ -237,14 +237,28 @@ export default function ResumeCheckPage() {
                 {saveMutation.isPending && saveMode === "new_file" ? "Saving..." : "Save as New File"}
               </Button>
               {result.resume_id && (
-                <Button
-                  variant={saveMode === "set_as_primary" ? "default" : "outline"}
-                  disabled={saveMutation.isPending}
-                  onClick={() => { setSaveMode("set_as_primary"); saveMutation.mutate("set_as_primary"); }}
-                >
-                  <Star className="mr-2 h-4 w-4" />
-                  {saveMutation.isPending && saveMode === "set_as_primary" ? "Saving..." : "Set as Primary"}
-                </Button>
+                <>
+                  <Button
+                    variant={saveMode === "set_as_primary" ? "default" : "outline"}
+                    disabled={saveMutation.isPending}
+                    onClick={() => { setSaveMode("set_as_primary"); saveMutation.mutate("set_as_primary"); }}
+                  >
+                    <Star className="mr-2 h-4 w-4" />
+                    {saveMutation.isPending && saveMode === "set_as_primary" ? "Saving..." : "Set as Primary"}
+                  </Button>
+                  <Button
+                    variant="destructive"
+                    disabled={saveMutation.isPending}
+                    onClick={() => {
+                      if (window.confirm("Overwrite the original resume file? This cannot be undone.")) {
+                        setSaveMode("overwrite");
+                        saveMutation.mutate("overwrite");
+                      }
+                    }}
+                  >
+                    Overwrite Original
+                  </Button>
+                </>
               )}
             </div>
             {saveMutation.isSuccess && (

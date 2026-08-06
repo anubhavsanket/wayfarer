@@ -153,11 +153,13 @@ class LLMRouter:
                 continue
 
             try:
+                # §12.3: Activate prompt caching if enabled globally
+                effective_cache = cache_control or settings.ENABLE_PROMPT_CACHING
                 return await self._call_provider(
                     prov, resolved_model, messages,
                     max_tokens=max_tokens,
                     temperature=temperature,
-                    cache_control=cache_control,
+                    cache_control=effective_cache,
                     json_mode=json_mode,
                 )
             except (httpx.HTTPStatusError, httpx.TimeoutException, httpx.TransportError) as exc:

@@ -3,7 +3,7 @@
 # Adding a new board = adding an entry here, not writing new fetch/parse code.
 
 job_boards:
-  # ── Sources with JD descriptions (better matching) ──────────────────
+  # ── Remote-first sources with JD descriptions ───────────────────────
 
   - name: remoteok
     enabled: true
@@ -11,7 +11,7 @@ job_boards:
     base_url: "https://remoteok.com/api"
     auth: none
     rate_limit_per_min: 30
-    default_remote_type: "remote"  # All Remote OK jobs are remote
+    default_remote_type: "remote"
     field_mapping:
       id: "$.id"
       title: "$.position"
@@ -31,7 +31,7 @@ job_boards:
     base_url: "https://remotive.com/api/remote-jobs"
     auth: none
     rate_limit_per_min: 30
-    default_remote_type: "remote"  # All Remotive jobs are remote
+    default_remote_type: "remote"
     field_mapping:
       id: "$.id"
       title: "$.title"
@@ -45,7 +45,88 @@ job_boards:
       param: ""
       max_pages: 1
 
-  # ── Sources without JD descriptions (title/location only) ───────────
+  - name: jobicy
+    enabled: true
+    type: rest_api
+    base_url: "https://jobicy.com/api/v2/remote-jobs"
+    auth: none
+    rate_limit_per_min: 30
+    default_remote_type: "remote"
+    field_mapping:
+      id: "$.id"
+      title: "$.jobTitle"
+      company: "$.companyName"
+      location: "$.jobGeo"
+      url: "$.url"
+      description: "$.jobDescription"
+      remote_type: "$.jobType"
+    pagination:
+      type: "query_param"
+      param: "count"
+      max_pages: 1
+
+  - name: arbeitnow
+    enabled: true
+    type: rest_api
+    base_url: "https://www.arbeitnow.com/api/job-board-api"
+    auth: none
+    rate_limit_per_min: 30
+    field_mapping:
+      id: "$.id"
+      title: "$.title"
+      company: "$.company_name"
+      location: "$.location"
+      url: "$.url"
+      description: "$.description"
+      remote_type: "$.remote"
+    pagination:
+      type: "query_param"
+      param: "page"
+      max_pages: 3
+
+  - name: himalayas
+    enabled: true
+    type: rest_api
+    base_url: "https://himalayas.app/jobs/api"
+    auth: none
+    rate_limit_per_min: 30
+    default_remote_type: "remote"
+    field_mapping:
+      id: "$.id"
+      title: "$.title"
+      company: "$.company"
+      location: "$.location"
+      url: "$.url"
+      description: "$.description"
+      remote_type: "$.remote"
+    pagination:
+      type: "query_param"
+      param: "offset"
+      max_pages: 2
+
+  # ── India / API-key sources ────────────────────────────────────────
+
+  - name: adzuna
+    enabled: false  # Enable when ADZUNA_API_KEY is set
+    type: rest_api
+    base_url: "https://api.adzuna.com/v1/api/jobs/in/search/1"
+    auth: api_key
+    api_key_env: "ADZUNA_API_KEY"
+    rate_limit_per_min: 25
+    extra_params:
+      results_per_page: "20"
+      what: "ai machine learning"
+    field_mapping:
+      id: "$.id"
+      title: "$.title"
+      company: "$.company.display_name"
+      location: "$.location.display_name"
+      url: "$.redirect_url"
+      description: "$.description"
+    pagination:
+      type: "query_param"
+      param: "page"
+      max_pages: 3
 
   - name: bluedoor
     enabled: true

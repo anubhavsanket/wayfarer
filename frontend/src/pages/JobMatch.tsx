@@ -107,6 +107,10 @@ export default function JobMatchPage() {
   const [cityFilter, setCityFilter] = useState("");
   const [locationMode, setLocationMode] = useState("specific_city");
   const [remoteOk, setRemoteOk] = useState(false);
+  const [sourceFilter, setSourceFilter] = useState("");
+
+  // Available sources (matches job_boards.yaml enabled boards)
+  const AVAILABLE_SOURCES = ["remoteok", "remotive", "jobicy", "arbeitnow", "himalayas", "bluedoor", "linkedin_guest", "adzuna"];
 
   // FR2.12 (§8.6): resolve primary resume from backend
   const { data: primary } = useQuery({
@@ -120,13 +124,14 @@ export default function JobMatchPage() {
   const hasResume = !!primary || !!resumeId;
 
   const { data, isLoading, error, refetch } = useQuery({
-    queryKey: ["jobs", resumeId, testMode, fresherOnly, primary?.resume_id, maxAgeDays, minScore, cityFilter, locationMode, remoteOk],
+    queryKey: ["jobs", resumeId, testMode, fresherOnly, primary?.resume_id, maxAgeDays, minScore, cityFilter, locationMode, remoteOk, sourceFilter],
     queryFn: () => api.jobsMatch(resumeId, 50, testMode, fresherOnly, {
       maxAgeDays,
       minScore: minScore / 100,
       cities: cityFilter,
       locationMode,
       remoteOk,
+      sources: sourceFilter,
     }),
     enabled: hasResume,
   });
@@ -285,11 +290,42 @@ export default function JobMatchPage() {
                 setCityFilter("");
                 setLocationMode("specific_city");
                 setRemoteOk(false);
+                setSourceFilter("");
               }}
               className="text-xs text-muted-foreground underline hover:text-foreground"
             >
               Reset all filters
             </button>
+
+            {/* Job source filter */}
+            <div className="space-y-1.5">
+              <label className="text-sm font-medium">Job Sources</label>
+              <div className="flex flex-wrap gap-2">
+                {AVAILABLE_SOURCES.map((src) => (
+                  <label key={src} className="flex items-center gap-1.5 text-xs cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={!sourceFilter || sourceFilter.split(",").includes(src)}
+                      onChange={(e) => {
+                        const current = sourceFilter ? sourceFilter.split(",") : [...AVAILABLE_SOURCES];
+                        if (e.target.checked) {
+                          current.push(src);
+                        } else {
+                          const idx = current.indexOf(src);
+                          if (idx >= 0) current.splice(idx, 1);
+                        }
+                        setSourceFilter(current.join(","));
+                      }}
+                      className="rounded"
+                    />
+                    {src}
+                  </label>
+                ))}
+              </div>
+              <p className="text-[10px] text-muted-foreground">
+                {sourceFilter ? `${sourceFilter.split(",").length}/${AVAILABLE_SOURCES.length} sources active` : "All sources active"}
+              </p>
+            </div>
           </div>
         )}
       </Card>

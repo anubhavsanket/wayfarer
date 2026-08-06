@@ -378,6 +378,7 @@ async def jobs_match(
     fresher_only: bool = Query(default=False, description="Filter to fresher/junior roles only (v1.1)"),
     max_age_days: int = Query(default=30, ge=1, le=365, description="Max age of job postings in days"),
     min_score: float = Query(default=0.0, ge=0.0, le=1.0, description="Minimum match score (0-1) to include"),
+    sources: str = Query(default="", description="Comma-separated source names to include (empty = all)"),
     test: bool = Query(default=False, description="Return sample data for UI testing"),
 ) -> JobMatchResponse:
     """Stage 3: rank live postings by fit against a resume.
@@ -451,12 +452,14 @@ async def jobs_match(
         cities=[c.strip() for c in cities.split(",") if c.strip()],
         remote_ok=remote_ok,
     )
+    source_list = [s.strip() for s in sources.split(",") if s.strip()] if sources else []
     try:
         return await match_jobs(
             resume_id, location_pref, limit,
             fresher_only=fresher_only,
             max_age_days=max_age_days,
             min_score=min_score,
+            sources=source_list,
         )
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc

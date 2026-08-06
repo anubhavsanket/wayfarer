@@ -68,7 +68,7 @@ export const api = {
     limit = 20,
     test = false,
     fresherOnly = false,
-    opts: { maxAgeDays?: number; minScore?: number; cities?: string; locationMode?: string; remoteOk?: boolean } = {},
+    opts: { maxAgeDays?: number; minScore?: number; cities?: string; locationMode?: string; remoteOk?: boolean; sources?: string } = {},
   ) => {
     const params = new URLSearchParams();
     if (resumeId) params.set("resume_id", resumeId);
@@ -80,6 +80,7 @@ export const api = {
     if (opts.cities) params.set("cities", opts.cities);
     if (opts.locationMode) params.set("location_mode", opts.locationMode);
     if (opts.remoteOk != null) params.set("remote_ok", opts.remoteOk.toString());
+    if (opts.sources) params.set("sources", opts.sources);
     return request<JobMatchResponse>(`/api/v1/jobs/match?${params.toString()}`);
   },
 };
