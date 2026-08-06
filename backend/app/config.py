@@ -146,6 +146,9 @@ class Settings(BaseSettings):
     # ── Job Board API Keys ──────────────────────────────────────────────
     BLUEDOOR_API_KEY: Optional[str] = None
 
+    # ── User Preferences ────────────────────────────────────────────
+    NEEDS_VISA_SPONSORSHIP: bool = False  # FR3.8: set True to flag no-sponsorship postings
+
     # ── Helpers ─────────────────────────────────────────────────────────
 
     def get_model_for_tier(self, tier: str) -> str:

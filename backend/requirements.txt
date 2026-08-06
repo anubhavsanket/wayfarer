@@ -26,8 +26,9 @@ PyMuPDF==1.25.5
 pytesseract==0.3.13
 Pillow>=10.0.0
 
-# Web scraping (Stage 1)
+# Web scraping (Stage 1 + job boards)
 crawl4ai==0.6.2
+beautifulsoup4>=4.12.0
 
 # Queue / background jobs (Stage 3 refresh)
 redis[hiredis]==5.2.1

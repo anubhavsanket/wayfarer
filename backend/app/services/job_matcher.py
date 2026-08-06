@@ -91,6 +91,30 @@ def _normalise_postings(postings: list[JobPosting]) -> list[JobPosting]:
     return postings
 
 
+async def _check_url_liveness(matches: list[JobMatch], max_checks: int = 20) -> list[JobMatch]:
+    """Lightweight HEAD check on apply URLs — flag dead links (§9.6 acceptance).
+
+    Only checks the top max_checks results to bound latency.
+    """
+    import httpx as _httpx
+    checked = 0
+    for m in matches[:max_checks]:
+        if not m.apply_url:
+            continue
+        try:
+            async with _httpx.AsyncClient(timeout=5, follow_redirects=True) as client:
+                resp = await client.head(m.apply_url)
+                if resp.status_code >= 400:
+                    m.flags.append("dead_link")
+        except Exception:
+            m.flags.append("dead_link")
+        checked += 1
+    dead = sum(1 for m in matches[:max_checks] if "dead_link" in m.flags)
+    if dead:
+        logger.info("URL liveness check: %d/%d dead links found", dead, checked)
+    return matches
+
+
 def _drop_stale(postings: list[JobPosting], ttl_days: int = 30) -> list[JobPosting]:
     """Drop postings whose ``fetched_at`` is older than ``ttl_days`` — FR3.9."""
     from datetime import datetime, timezone, timedelta
@@ -293,20 +317,35 @@ async def _match_one(
 ) -> JobMatch:
     """Compute the full hybrid match for a single posting (top-K only).
 
-    §12.1: When a resume_graph is available, uses its subgraph for
-    keyword extraction instead of the full resume text — turns
-    O(N × full_resume_tokens) into O(N × relevant_subgraph_tokens).
+    §12.1: When a resume_graph is available, uses its subgraph to
+    filter bullets to only those relevant to the JD's keywords —
+    turns O(N × full_resume_tokens) into O(N × relevant_subgraph_tokens).
     """
-    bullets = parsed.bullets
+    # §12.1: Extract JD keywords first, then use graph to filter bullets
     keywords = await _extract_jd_keywords(posting.description or "")
-    overlap, missing = await _compute_keyword_overlap(posting, bullets, keywords)
+
+    if resume_graph and keywords:
+        # Use graph subgraph to get only relevant bullet IDs
+        subgraph = resume_graph.subgraph_for_keywords(keywords)
+        relevant_bullets = [
+            b for b in parsed.bullets
+            if any(n.id == b.id for n in subgraph.nodes.values())
+        ]
+        # Fall back to all bullets if subgraph is too narrow
+        if len(relevant_bullets) < 2:
+            relevant_bullets = parsed.bullets
+    else:
+        relevant_bullets = parsed.bullets
+
+    overlap, missing = await _compute_keyword_overlap(posting, relevant_bullets, keywords)
 
     hybrid = round(SEMANTIC_WEIGHT * semantic_score + KEYWORD_WEIGHT * overlap, 3)
     top_gaps = missing[:3]
 
     # Legitimacy flags (FR3.8) — ghost/scam and sponsorship check
     from .legitimacy import check_posting
-    flag_dicts = check_posting(posting, needs_sponsorship=False)
+    from ..config import settings
+    flag_dicts = check_posting(posting, needs_sponsorship=getattr(settings, 'NEEDS_VISA_SPONSORSHIP', False))
     flags = [f["kind"] for f in flag_dicts]
 
     # Fresher Mode: classify experience level (§15.1)
@@ -517,6 +556,9 @@ async def match_jobs(
     # 4b. Minimum score filter — hide irrelevant listings
     if min_score > 0:
         matches = [m for m in matches if m.match_score >= min_score]
+
+    # 4c. URL liveness check (§9.6 acceptance)
+    matches = await _check_url_liveness(matches)
 
     # 5. Fresher Mode: separate confirmed vs unclear (§15.1)
     unclear_matches: list[JobMatch] = []

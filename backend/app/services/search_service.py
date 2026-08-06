@@ -86,15 +86,33 @@ async def _fetch_and_cache(items: list[SearchResultItem]) -> dict[str, FetchResu
     if not urls:
         return results
 
-    # Check cache first
+    # Check cache first (FR1.5: enforce TTL on read)
+    from datetime import datetime, timezone, timedelta
+    from ..config import settings
+    cache_ttl = timedelta(hours=settings.CACHE_TTL_HOURS)
+    now = datetime.now(timezone.utc)
+
     cache_ids = [store._content_hash(u) for u in urls]
     cached = store.get(SEARCH_CACHE_COLLECTION, cache_ids)
     cached_docs = cached.get("documents") or []
+    cached_metas = cached.get("metadatas") or []
     cached_urls = {i: u for i, u in enumerate(urls)}
     cached_hits: dict[str, str] = {}  # url -> markdown
     for i, doc in enumerate(cached_docs):
         if doc:
-            cached_hits[cached_urls.get(i, "")] = doc
+            url = cached_urls.get(i, "")
+            # Check TTL — skip stale entries
+            meta = cached_metas[i] if i < len(cached_metas) else {}
+            fetched_at = meta.get("fetched_at")
+            if fetched_at:
+                try:
+                    fetched_dt = datetime.fromisoformat(fetched_at.replace("Z", "+00:00"))
+                    if now - fetched_dt > cache_ttl:
+                        logger.debug("Cache hit expired for %s (fetched %s)", url[:60], fetched_at)
+                        continue
+                except (ValueError, TypeError):
+                    pass  # If we can't parse the timestamp, use the cache entry
+            cached_hits[url] = doc
 
     to_fetch = [u for u in urls if u not in cached_hits]
     logger.info("Crawl4AI fetching %d/%d URLs (cache hit for %d)",

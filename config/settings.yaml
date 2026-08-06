@@ -17,13 +17,13 @@ llm:
 
   models:
     simple:  # for keyword extraction, tier classification
-      nvidia: "gpt-4o-mini"
+      nvidia: "meta/llama-3.1-8b-instruct"
       openrouter: "meta-llama/llama-3.1-8b-instruct"
-      ollama: "llama3.2:3b"
+      ollama: "qwen2.5:1.5b"
     complex:  # for bullet rewriting, synthesis, matching
-      nvidia: "gpt-4o"
-      openrouter: "anthropic/claude-3-5-sonnet"
-      ollama: "llama3.2:70b"
+      nvidia: "meta/llama-3.1-8b-instruct"
+      openrouter: "meta-llama/llama-3.1-8b-instruct"
+      ollama: "qwen3:1.7b"
 
   nvidia_nim:
     endpoint: "https://integrate.api.nvidia.com/v1"
@@ -73,8 +73,8 @@ resume:
   ats_simulation:
     enabled: true  # extract text as naive ATS would
   confidence:
-    verified_threshold: 0.9  # keyword present near-verbatim
-    reworded_threshold: 0.7  # partial semantic match
+    verified_threshold: 0.90  # keyword present near-verbatim
+    reworded_threshold: 0.75  # partial semantic match
     max_suggestions_per_keyword: 3
 
 # Job Matcher Configuration (Stage 3)

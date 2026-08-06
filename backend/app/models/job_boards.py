@@ -146,10 +146,7 @@ class JobBoardConnector:
         Returns a list of normalised ``JobPosting`` objects.
         """
         if board.type == "html_scrape":
-            logger.warning(
-                "HTML scrape boards not yet implemented — skipping %s", board.name,
-            )
-            return []
+            return await self._fetch_html_scrape(board, keywords=keywords, location=location, pages=pages)
         return await self._fetch_rest_api(board, keywords=keywords, location=location, pages=pages)
 
     async def _fetch_rest_api(
@@ -230,6 +227,77 @@ class JobBoardConnector:
                 value += pag.step
 
         return postings
+
+    async def _fetch_html_scrape(
+        self,
+        board: JobBoardEntry,
+        *,
+        keywords: str,
+        location: str,
+        pages: int | None,
+    ) -> list[JobPosting]:
+        """Fetch postings from an HTML scrape board using CSS selectors."""
+        selectors = board.css_selectors
+        pag = board.pagination
+        max_pages = pages or pag.max_pages
+        value = pag.start_value
+        postings: list[JobPosting] = []
+
+        try:
+            from bs4 import BeautifulSoup
+        except ImportError:
+            logger.warning("BeautifulSoup not installed — cannot scrape %s", board.name)
+            return []
+
+        for page_num in range(max_pages):
+            url = board.base_url
+            if pag.type != "none" and pag.param:
+                sep = "&" if "?" in url else "?"
+                url = f"{url}{sep}{pag.param}={value}"
+
+            try:
+                resp = await self._client.get(url)
+                resp.raise_for_status()
+                soup = BeautifulSoup(resp.text, "html.parser")
+
+                # Find all listing containers
+                listing_els = soup.select(selectors.listing)
+                for el in listing_els:
+                    title_el = el.select_one(selectors.title)
+                    company_el = el.select_one(selectors.company)
+                    location_el = el.select_one(selectors.location)
+                    url_el = el.select_one(selectors.url)
+                    desc_el = el.select_one(selectors.description)
+
+                    title = title_el.get_text(strip=True) if title_el else ""
+                    company = company_el.get_text(strip=True) if company_el else ""
+                    loc = location_el.get_text(strip=True) if location_el else ""
+                    href = url_el.get("href", "") if url_el else ""
+                    if href and not href.startswith("http"):
+                        href = f"{board.base_url.rstrip('/')}{href}"
+                    desc = desc_el.get_text(strip=True) if desc_el else ""
+
+                    if title or href:
+                        postings.append({
+                            "title": title,
+                            "company": company or board.name,
+                            "city": loc,
+                            "apply_url": href,
+                            "description": desc,
+                            "provider": board.name,
+                        })
+
+            except Exception as exc:
+                logger.warning("HTML scrape failed for %s (page %d): %s", board.name, page_num, exc)
+                break
+
+            if pag.type in ("start_offset", "query_param"):
+                value += pag.step
+            else:
+                value += pag.step
+
+        logger.info("Scraped %d postings from %s", len(postings), board.name)
+        return [self._normalise(board, p) for p in postings if self._normalise(board, p)]
 
     def _parse_html_postings(self, html: str, board: JobBoardEntry) -> list[dict[str, Any]]:
         """Parse LinkedIn-style HTML job cards into a list of dicts."""
