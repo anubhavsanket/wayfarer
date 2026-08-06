@@ -202,7 +202,7 @@ class TestJobBoardRegistry:
         registry = load_registry("config/job_boards.yaml")
         enabled = [b for b in registry.job_boards if b.enabled]
         # All enabled boards must be known sources (no examples/templates)
-        known = {"bluedoor", "linkedin_guest", "remoteok", "remotive"}
+        known = {"bluedoor", "linkedin_guest", "remoteok", "remotive", "jobicy", "arbeitnow", "himalayas"}
         assert all(b.name in known for b in enabled)
 
     def test_adding_board_is_config_change_not_code(self):
