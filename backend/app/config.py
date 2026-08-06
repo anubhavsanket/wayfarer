@@ -50,34 +50,34 @@ class Settings(BaseSettings):
         "custom": {"requests": 60, "window": 60},
     }
 
-    # ── Model selection (§12.5 — benchmarked, both tiers converged) ────
-    # Evaluated 4 models on 21 rewrite cases (2048 max_tokens, /no_think
-    # for qwen3 to suppress reasoning traces):
+    # ── Model selection (§12.5 — benchmarked per-tier) ────────────────
+    # Evaluated on two benchmarks:
+    #   Generation (21 rewrite cases, 2048 max_tokens):
+    #     qwen3:1.7b      97% avg, 0 empty, 16.0s, 1.3GB
+    #     qwen2.5:1.5b     89% avg, 0 empty,  7.5s, 940MB
+    #   Classification (20 experience-level cases):
+    #     qwen2.5:1.5b     70% acc, 1.4s, 940MB
+    #     qwen3:1.7b       25% acc, 4.2s, 1.3GB (breaks with /no_think)
+    #     lfm2.5-thinking  10% acc, 3.2s, 700MB
     #
-    #   qwen3:1.7b      97% avg,  0 empty, 16.0s avg, 542 tok, 1.3GB
-    #   llama3.2:3b      90% avg,  0 empty, 18.1s avg,  41 tok, 1.9GB
-    #   qwen2.5:1.5b     89% avg,  0 empty,  7.5s avg,  30 tok, 940MB
-    #   lfm2.5-thinking  87% avg,  2 empty, 13.2s avg, 1236 tok, 700MB
-    #
-    # Tradeoffs (honest):
-    # - qwen3:1.7b: best accuracy (97%), moderate speed (16s), uses
-    #   thinking tokens internally (542 avg) but /no_think suppresses
-    #   them from output. Needs /no_think prepended to messages.
-    # - qwen2.5:1.5b: fastest (7.5s), smallest (940MB), but 8% less
-    #   accurate. Good for high-throughput scenarios.
-    # - lfm2.5-thinking: 2 empty responses even at 2048 tokens — real
-    #   capability gap on generation tasks, not just token budget.
-    #
-    # Decision: both tiers use qwen3:1.7b. Single model eliminates
-    # VRAM pressure and cold-start swap risk on 4GB GTX 1650
-    # (1.3GB + 260MB embed = 1.6GB, 2.4GB headroom).
-    # Eval script: backend/eval_rewrite.py (seed for §15.7 eval suite).
-    OLLAMA_MODEL: str = "qwen3:1.7b"
+    # Decision: different models per tier.
+    # - Simple tier (keyword extraction, classification): qwen2.5:1.5b
+    #   Non-thinking model, fast (1.4s), 70% classification accuracy.
+    #   Thinking models (qwen3, lfm2.5) fail classification because
+    #   /no_think skips the reasoning needed for level determination.
+    # - Complex tier (bullet rewriting, synthesis): qwen3:1.7b
+    #   Thinking model, 97% rewrite accuracy, 16s avg.
+    #   /no_think suppresses output but ~500 tokens still consumed
+    #   internally (visible in eval_count, not in content).
+    # VRAM: 940MB + 1.3GB + 260MB embed = 2.76GB (1.2GB headroom on 4GB).
+    # Both models coexist without cold-start swap risk.
+    # Eval scripts: backend/eval_rewrite.py, backend/eval_classify.py
+    OLLAMA_MODEL: str = "qwen2.5:1.5b"
     LLM_MODELS: dict = {
         "simple": {
             "nvidia": "meta/llama-3.1-8b-instruct",
             "openrouter": "meta-llama/llama-3.1-8b-instruct",
-            "ollama": "qwen3:1.7b",
+            "ollama": "qwen2.5:1.5b",
         },
         "complex": {
             "nvidia": "meta/llama-3.1-8b-instruct",
