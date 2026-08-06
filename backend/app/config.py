@@ -51,15 +51,27 @@ class Settings(BaseSettings):
     }
 
     # ── Model selection (§12.5 — benchmarked, both tiers converged) ────
-    # Evaluated 4 models on 6 bullet rewrite cases (2048 max_tokens):
-    #   qwen3:1.7b      100% avg, 0 empty, 1.3GB VRAM
-    #   llama3.2:3b      87% avg, 0 empty, 1.9GB VRAM
-    #   qwen2.5:1.5b     83% avg, 0 empty, 940MB VRAM
-    #   lfm2.5-thinking  80% avg, 1 empty, 700MB VRAM
+    # Evaluated 4 models on 21 rewrite cases (2048 max_tokens, /no_think
+    # for qwen3 to suppress reasoning traces):
     #
-    # Decision: both tiers use qwen3:1.7b — perfect score on generation,
-    # classification, and extraction. Single model = no VRAM pressure,
-    # no cold-start swap risk on 4GB GTX 1650 (1.3GB + 260MB embed = 1.6GB).
+    #   qwen3:1.7b      97% avg,  0 empty, 16.0s avg, 542 tok, 1.3GB
+    #   llama3.2:3b      90% avg,  0 empty, 18.1s avg,  41 tok, 1.9GB
+    #   qwen2.5:1.5b     89% avg,  0 empty,  7.5s avg,  30 tok, 940MB
+    #   lfm2.5-thinking  87% avg,  2 empty, 13.2s avg, 1236 tok, 700MB
+    #
+    # Tradeoffs (honest):
+    # - qwen3:1.7b: best accuracy (97%), moderate speed (16s), uses
+    #   thinking tokens internally (542 avg) but /no_think suppresses
+    #   them from output. Needs /no_think prepended to messages.
+    # - qwen2.5:1.5b: fastest (7.5s), smallest (940MB), but 8% less
+    #   accurate. Good for high-throughput scenarios.
+    # - lfm2.5-thinking: 2 empty responses even at 2048 tokens — real
+    #   capability gap on generation tasks, not just token budget.
+    #
+    # Decision: both tiers use qwen3:1.7b. Single model eliminates
+    # VRAM pressure and cold-start swap risk on 4GB GTX 1650
+    # (1.3GB + 260MB embed = 1.6GB, 2.4GB headroom).
+    # Eval script: backend/eval_rewrite.py (seed for §15.7 eval suite).
     OLLAMA_MODEL: str = "qwen3:1.7b"
     LLM_MODELS: dict = {
         "simple": {

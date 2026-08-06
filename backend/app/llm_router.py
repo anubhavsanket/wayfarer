@@ -325,6 +325,16 @@ class LLMRouter:
         max_tokens: int,
         temperature: float,
     ) -> dict[str, Any]:
+        # For qwen3 thinking models, prepend /no_think to suppress reasoning
+        # trace and get direct answers (saves ~1500 tokens per request)
+        if "qwen3" in model.lower():
+            messages = list(messages)
+            if messages and messages[0]["role"] == "user":
+                messages[0] = {
+                    "role": "user",
+                    "content": "/no_think\n" + messages[0]["content"],
+                }
+
         url = f"{settings.OLLAMA_ENDPOINT}/api/chat"
         resp = await self._client.post(
             url,
