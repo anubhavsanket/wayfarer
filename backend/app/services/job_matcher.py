@@ -456,10 +456,21 @@ async def match_jobs(
     logger.info("After pipeline cleanup: %d postings (max_age=%d days)", len(postings), max_age_days)
 
     # 2. Embedding similarity (rank all, keep top-K)
-    # resume_vec may be None if the embedding model isn't available
+    # Limit embedding to first 50 postings with descriptions to bound latency
+    # (each embedding takes ~8s on CPU, so 200 × 8 = 26min is unacceptable)
+    MAX_EMBED_POSTINGS = 50
     resume_vec = await _embed_resume(parsed)
     if resume_vec is not None:
-        scored = await _compute_semantic_scores(resume_vec, postings)
+        # Prioritise postings that have descriptions (they can actually be matched)
+        with_desc = [p for p in postings if p.description]
+        without_desc = [p for p in postings if not p.description]
+        to_embed = with_desc[:MAX_EMBED_POSTINGS]
+        no_score = without_desc + with_desc[MAX_EMBED_POSTINGS:]
+        logger.info("Embedding %d of %d postings with descriptions (%d skipped, %d without desc)",
+                     len(to_embed), len(with_desc), max(0, len(with_desc) - MAX_EMBED_POSTINGS), len(without_desc))
+        scored = await _compute_semantic_scores(resume_vec, to_embed)
+        # Add remaining with 0 score
+        scored.extend((p, 0.0) for p in no_score)
         scored.sort(key=lambda t: t[1], reverse=True)
         top_k = scored[:TOP_K_EMBEDDING_SURVIVORS]
         logger.info("Top-K after semantic score: %d postings (of %d total)", len(top_k), len(scored))
