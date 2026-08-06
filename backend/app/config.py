@@ -50,27 +50,27 @@ class Settings(BaseSettings):
         "custom": {"requests": 60, "window": 60},
     }
 
-    # ── Model selection (§12.5 right-sizing — benchmarked) ─────────────
-    # Evaluated lfm2.5-thinking (1.2B) vs llama3.2:3b (3B) on 6 bullet
-    # rewrite cases. Results: lfm avg 47%, llama avg 80%. lfm returns
-    # empty strings on generation tasks but classifies well.
+    # ── Model selection (§12.5 — benchmarked, both tiers converged) ────
+    # Evaluated 4 models on 6 bullet rewrite cases (2048 max_tokens):
+    #   qwen3:1.7b      100% avg, 0 empty, 1.3GB VRAM
+    #   llama3.2:3b      87% avg, 0 empty, 1.9GB VRAM
+    #   qwen2.5:1.5b     83% avg, 0 empty, 940MB VRAM
+    #   lfm2.5-thinking  80% avg, 1 empty, 700MB VRAM
     #
-    # Decision: tiers use different models after evaluation.
-    # - Simple tier (keyword extraction, classification): lfm2.5-thinking
-    #   Fast (2.8s avg), accurate for structured extraction tasks.
-    # - Complex tier (bullet rewriting, synthesis): llama3.2:3b
-    #   Higher quality generation, preserves metrics and terminology.
-    OLLAMA_MODEL: str = "lfm2.5-thinking"
+    # Decision: both tiers use qwen3:1.7b — perfect score on generation,
+    # classification, and extraction. Single model = no VRAM pressure,
+    # no cold-start swap risk on 4GB GTX 1650 (1.3GB + 260MB embed = 1.6GB).
+    OLLAMA_MODEL: str = "qwen3:1.7b"
     LLM_MODELS: dict = {
         "simple": {
             "nvidia": "meta/llama-3.1-8b-instruct",
             "openrouter": "meta-llama/llama-3.1-8b-instruct",
-            "ollama": "lfm2.5-thinking",
+            "ollama": "qwen3:1.7b",
         },
         "complex": {
             "nvidia": "meta/llama-3.1-8b-instruct",
             "openrouter": "meta-llama/llama-3.1-8b-instruct",
-            "ollama": "llama3.2:3b",
+            "ollama": "qwen3:1.7b",
         },
     }
 
