@@ -252,7 +252,7 @@ def _classify_experience_regex(text: str) -> dict[str, Any]:
     text_lower = text.lower()
 
     # Senior indicators
-    if re.search(r"\b(senior|lead|principal|staff|head of|director)\b", text_lower):
+    if re.search(r"\b(senior|lead|principal|staff|head of|director|vp |vice president)\b", text_lower):
         return {"experience_level": "senior", "min_experience_years": 5.0, "confidence": 0.6}
 
     # Mid indicators
@@ -260,11 +260,11 @@ def _classify_experience_regex(text: str) -> dict[str, Any]:
         return {"experience_level": "mid", "min_experience_years": 3.0, "confidence": 0.5}
 
     # Junior indicators
-    if re.search(r"\b(junior|entry[-\s]?level|1[-+]?\s*years|2[-+]?\s*years)\b", text_lower):
+    if re.search(r"\b(junior|jr\.?|entry[-\s]?level|1[-+]?\s*years|2[-+]?\s*years)\b", text_lower):
         return {"experience_level": "junior", "min_experience_years": 1.0, "confidence": 0.5}
 
     # Fresher indicators
-    if re.search(r"\b(fresher|graduate|no experience|intern|trainee|0[-+]?\s*years)\b", text_lower):
+    if re.search(r"\b(fresher|graduate|no experience|intern|trainee|0[-+]?\s*years|recent grad)\b", text_lower):
         return {"experience_level": "fresher", "min_experience_years": 0.0, "confidence": 0.6}
 
     # Experience year patterns
