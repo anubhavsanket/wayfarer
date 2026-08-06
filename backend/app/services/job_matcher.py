@@ -212,9 +212,10 @@ Job posting:
 
 
 async def _classify_experience(jd_text: str) -> dict[str, Any]:
-    """Classify experience level using a small local LLM (qwen3:0.6b).
+    """Classify experience level using a small local LLM.
 
-    Falls back to regex-based detection when the LLM is unavailable.
+    Falls back to regex-based detection when the LLM fails or returns
+    unparsable output.
     """
     VALID_LEVELS = {"fresher", "junior", "mid", "senior", "unclear"}
     try:
@@ -223,14 +224,23 @@ async def _classify_experience(jd_text: str) -> dict[str, Any]:
             model="qwen3:0.6b",
             max_tokens=150,
         )
-        result = extract_json(resp["content"])
-        level = result.get("experience_level", "unclear")
+        raw = resp["content"]
+        result = extract_json(raw)
+        level = result.get("experience_level", "unclear") if result else "unclear"
         if level not in VALID_LEVELS:
             level = "unclear"
+
+        # If LLM returned "unclear", try regex on both the raw LLM output
+        # and the original JD text as a second chance
+        if level == "unclear":
+            fallback = _classify_experience_regex(raw + "\n" + jd_text)
+            if fallback["experience_level"] != "unclear":
+                return fallback
+
         return {
             "experience_level": level,
-            "min_experience_years": result.get("min_experience_years"),
-            "confidence": result.get("confidence", 0.0),
+            "min_experience_years": result.get("min_experience_years") if result else None,
+            "confidence": result.get("confidence", 0.0) if result else 0.0,
         }
     except Exception as exc:
         logger.debug("LLM classification failed (%s), using regex fallback", exc)
