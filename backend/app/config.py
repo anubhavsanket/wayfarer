@@ -59,25 +59,36 @@ class Settings(BaseSettings):
     #   qwen2.5:1.5b     89% avg, 0 empty,  7.5s,  30 tok,  940MB
     #   lfm2.5-thinking  87% avg, 2 empty, 13.2s, 1236 tok, 700MB
     #
-    # Classification (20 experience-level cases):
-    #   qwen2.5:1.5b     70% acc, 9.5s avg, 940MB
-    #   qwen3:0.6b       40% acc, 3.2s avg, ~500MB
-    #   qwen3:1.7b       25% acc, 12.7s avg, 1.3GB (breaks with /no_think)
-    #   lfm2.5-thinking  10% acc, 3.1s avg, 700MB
+    # Classification (20 cases, synonym-mapped parser):
+    #   qwen2.5:1.5b     68% acc, 1.4s avg, 30 tok,  940MB
+    #   qwen3:0.6b       32% acc, 3.2s avg, ~500 tok, 500MB
+    #   qwen3:1.7b       26% acc, 4.2s avg, ~300 tok, 1.3GB
+    #   qwen3.5:2b       ~70%+, 120s+, 2618 tok, 2.6GB (thinking ON)
     #
     # * qwen3:1.7b uses ~500 thinking tokens internally even with
     #   /no_think — suppressed from output but counted in eval_count.
-    #   This is why it's slower despite smaller model size.
     #
-    # Key insight: thinking models (qwen3, lfm2.5) fail classification
-    # because /no_think suppresses the reasoning chain needed to
-    # determine experience level. Non-thinking models (qwen2.5) work.
+    # Raw-output analysis of /no_think classification failures:
+    #   Two failure modes found in thinking models with /no_think:
+    #   (1) Non-standard labels: "entry-level" vs "fresher", "mid-level"
+    #       vs "mid", "Senior" vs "senior" — requires synonym mapping
+    #   (2) Genuine errors: "Staff Engineer" → "Mid" (should be senior)
+    #
+    # qwen3.5:2b (thinking ON) works correctly — raw output shows correct
+    # "Senior" for explicit_senior — but at 2618 tokens and 120s+/call,
+    # it's disqualifying for per-posting classification regardless.
+    # This confirms: /no_think breaks classification for small thinking
+    # models; preserving full thinking restores accuracy but at unacceptable
+    # latency. qwen2.5:1.5b (non-thinking) avoids both issues.
     #
     # Decision: different models per tier.
     # - Simple tier (keyword extraction, classification): qwen2.5:1.5b
-    #   Non-thinking model, 70% classification accuracy, fast.
+    #   Non-thinking model, 68% classification accuracy, 1.4s, 30 tokens.
+    #   Outputs standard labels directly, no synonym mapping needed.
     # - Complex tier (bullet rewriting, synthesis): qwen3:1.7b
-    #   Thinking model, 97% rewrite accuracy, needs /no_think.
+    #   Thinking model, 97% rewrite accuracy, 16s avg.
+    #   /no_think suppresses output but ~500 tokens still consumed
+    #   internally (visible in eval_count, not in content).
     # VRAM: 940MB + 1.3GB + 260MB embed = 2.76GB (1.2GB headroom on 4GB).
     # Both models coexist without cold-start swap risk.
     # Eval scripts: backend/eval_rewrite.py, backend/eval_classify.py

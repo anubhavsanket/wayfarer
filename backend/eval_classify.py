@@ -67,21 +67,34 @@ async def call_ollama(model: str, prompt: str) -> tuple[str, float]:
         return content.strip(), elapsed
 
 
+SYNONYM_MAP = {
+    "entry-level": "junior", "entry level": "junior",
+    "mid-level": "mid", "mid level": "mid",
+    "beginner": "fresher", "new grad": "fresher",
+    "experienced": "mid",
+}
+
 def parse_classification(response: str) -> str:
-    """Extract experience_level from model response."""
+    """Extract experience_level from model response, with synonym mapping."""
     try:
-        # Try to find JSON in response
         import re
         match = re.search(r'\{[^}]+\}', response)
         if match:
             data = json.loads(match.group())
-            level = data.get("experience_level", "unclear").strip().lower()
-            if level in VALID_LEVELS:
-                return level
+            raw = data.get("experience_level", "unclear").strip().lower()
+            # Try exact match first
+            if raw in VALID_LEVELS:
+                return raw
+            # Try synonym mapping
+            if raw in SYNONYM_MAP:
+                return SYNONYM_MAP[raw]
+            # Try partial match
+            for level in VALID_LEVELS:
+                if level in raw:
+                    return level
     except (json.JSONDecodeError, AttributeError):
         pass
 
-    # Fallback: check for keywords (case-insensitive)
     lower = response.lower()
     for level in VALID_LEVELS:
         if level in lower:
