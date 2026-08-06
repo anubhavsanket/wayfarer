@@ -75,13 +75,13 @@ def parse_classification(response: str) -> str:
         match = re.search(r'\{[^}]+\}', response)
         if match:
             data = json.loads(match.group())
-            level = data.get("experience_level", "unclear").lower()
+            level = data.get("experience_level", "unclear").strip().lower()
             if level in VALID_LEVELS:
                 return level
     except (json.JSONDecodeError, AttributeError):
         pass
 
-    # Fallback: check for keywords
+    # Fallback: check for keywords (case-insensitive)
     lower = response.lower()
     for level in VALID_LEVELS:
         if level in lower:
@@ -90,7 +90,7 @@ def parse_classification(response: str) -> str:
 
 
 async def run_benchmark():
-    models = ["qwen3:0.6b", "qwen2.5:1.5b", "lfm2.5-thinking", "qwen3:1.7b"]
+    models = ["qwen2.5:1.5b", "qwen3:0.6b", "qwen3.5:0.8b", "lfm2.5-thinking", "qwen3:1.7b"]
 
     async with httpx.AsyncClient(timeout=10) as client:
         resp = await client.get("http://localhost:11434/api/tags")
