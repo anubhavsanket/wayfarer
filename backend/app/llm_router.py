@@ -29,6 +29,7 @@ import json
 import logging
 import time
 from collections import deque
+from contextvars import ContextVar
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -120,19 +121,29 @@ class LLMRouter:
         cache_control: bool = False,
         json_mode: bool = False,
         provider: str | None = None,
+        model: str | None = None,
     ) -> dict[str, Any]:
         """Send a chat request, failing over across providers.
 
         Returns {"content": str, "provider": str, "model": str, "cached": bool}.
         Raises RuntimeError if every provider is exhausted.
+
+        If ``model`` is provided, it overrides the tier-based model selection.
         """
         # If a specific provider is requested, only try it
         candidates = (provider,) if provider else self.providers
         last_error: Exception | None = None
 
+        # Check for per-request model override from headers (set by middleware)
+        try:
+            from .main import request_model_override
+            header_model = request_model_override.get()
+        except (ImportError, LookupError):
+            header_model = None
+
         for prov in candidates:
-            model = self._model_for(prov, tier)
-            if not self._provider_available(prov, model):
+            resolved_model = model or header_model or self._model_for(prov, tier)
+            if not self._provider_available(prov, resolved_model):
                 logger.debug("Provider %s skipped (no API key / model)", prov)
                 continue
 
@@ -143,7 +154,7 @@ class LLMRouter:
 
             try:
                 return await self._call_provider(
-                    prov, model, messages,
+                    prov, resolved_model, messages,
                     max_tokens=max_tokens,
                     temperature=temperature,
                     cache_control=cache_control,

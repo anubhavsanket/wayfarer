@@ -11,11 +11,13 @@ from __future__ import annotations
 import asyncio
 import logging
 from contextlib import asynccontextmanager
+from contextvars import ContextVar
 
 import httpx
 import redis.asyncio as redis
 from fastapi import FastAPI, File, Form, HTTPException, Query, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
+from pydantic import BaseModel, Field
 
 from .config import settings
 from .llm_router import router as llm_router
@@ -38,6 +40,9 @@ logging.basicConfig(
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
 )
 logger = logging.getLogger(__name__)
+
+# Context variable for per-request model override (set by middleware from headers)
+request_model_override: ContextVar[str | None] = ContextVar("model_override", default=None)
 
 # Global clients
 redis_client: redis.Redis | None = None
@@ -169,6 +174,18 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+@app.middleware("http")
+async def read_model_override(request, call_next):
+    """Read X-Ollama-Model header and set it in context for the LLM router."""
+    model = request.headers.get("X-Ollama-Model")
+    token = request_model_override.set(model or None)
+    try:
+        response = await call_next(request)
+        return response
+    finally:
+        request_model_override.reset(token)
 
 
 # ---------------------------------------------------------------------------
@@ -323,6 +340,32 @@ async def set_primary_resume(
 
     info = resume_store.get_primary_info()
     return ResumePrimaryInfo(**info)
+
+
+# ---------------------------------------------------------------------------
+# Model configuration (§12.5 user-configurable)
+# ---------------------------------------------------------------------------
+
+class ModelConfig(BaseModel):
+    ollama_model: str = Field(default="lfm2.5-thinking", description="Ollama model for all tiers")
+
+
+@app.get("/api/v1/config/model", tags=["config"])
+async def get_model_config() -> ModelConfig:
+    """Return the current model configuration."""
+    return ModelConfig(ollama_model=settings.OLLAMA_MODEL)
+
+
+@app.post("/api/v1/config/model", tags=["config"])
+async def set_model_config(config: ModelConfig) -> dict:
+    """Update the model configuration at runtime.
+
+    The change applies immediately but does not persist across restarts.
+    To persist, set OLLAMA_MODEL in .env.
+    """
+    settings.OLLAMA_MODEL = config.ollama_model
+    logger.info("Model updated to: %s", config.ollama_model)
+    return {"status": "ok", "ollama_model": config.ollama_model}
 
 
 @app.get("/api/v1/jobs/match", response_model=JobMatchResponse, tags=["stage3"])

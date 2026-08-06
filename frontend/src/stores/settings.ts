@@ -9,6 +9,7 @@ export interface ApiSettings {
   openrouter_api_key: string;
   openrouter_endpoint: string;
   ollama_endpoint: string;
+  ollama_model: string;
   lmstudio_endpoint: string;
   lmstudio_model: string;
   tavily_api_key: string;
@@ -23,6 +24,7 @@ const DEFAULTS: ApiSettings = {
   openrouter_api_key: "",
   openrouter_endpoint: "https://openrouter.ai/api/v1",
   ollama_endpoint: "http://ollama:11434",
+  ollama_model: "",
   lmstudio_endpoint: "http://localhost:1234/v1",
   lmstudio_model: "",
   tavily_api_key: "",
@@ -73,6 +75,7 @@ export function buildAuthHeaders(): Record<string, string> {
   if (s.openrouter_api_key) headers["X-OpenRouter-API-Key"] = s.openrouter_api_key;
   if (s.openrouter_endpoint) headers["X-OpenRouter-Endpoint"] = s.openrouter_endpoint;
   if (s.ollama_endpoint) headers["X-Ollama-Endpoint"] = s.ollama_endpoint;
+  if (s.ollama_model) headers["X-Ollama-Model"] = s.ollama_model;
   if (s.lmstudio_endpoint) headers["X-LMStudio-Endpoint"] = s.lmstudio_endpoint;
   if (s.lmstudio_model) headers["X-LMStudio-Model"] = s.lmstudio_model;
   if (s.tavily_api_key) headers["X-Tavily-API-Key"] = s.tavily_api_key;

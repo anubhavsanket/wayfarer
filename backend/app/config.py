@@ -51,18 +51,19 @@ class Settings(BaseSettings):
     }
 
     # ── Model selection (§12.5 right-sizing) ────────────────────────────
-    # Simple tier: keyword extraction, classification, extraction
-    # Complex tier: bullet rewriting, synthesis, nuanced matching
+    # Default: lfm2.5-thinking (1.2B) — fast, capable, fits in 4GB VRAM
+    # Users can override via Settings page → stored in localStorage → sent as headers
+    OLLAMA_MODEL: str = "lfm2.5-thinking"
     LLM_MODELS: dict = {
         "simple": {
             "nvidia": "meta/llama-3.1-8b-instruct",
             "openrouter": "meta-llama/llama-3.1-8b-instruct",
-            "ollama": "llama3.2:3b",
+            "ollama": "lfm2.5-thinking",
         },
         "complex": {
             "nvidia": "meta/llama-3.1-8b-instruct",
             "openrouter": "meta-llama/llama-3.1-8b-instruct",
-            "ollama": "llama3.2:3b",
+            "ollama": "lfm2.5-thinking",
         },
     }
 

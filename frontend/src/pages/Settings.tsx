@@ -195,9 +195,17 @@ export default function SettingsPage() {
           )}
 
           {settings.llm_provider === "ollama" && (
-            <Field label="Ollama Endpoint" value={settings.ollama_endpoint}
-              onChange={(v) => update({ ollama_endpoint: v })}
-              placeholder="http://localhost:11434" />
+            <>
+              <Field label="Ollama Endpoint" value={settings.ollama_endpoint}
+                onChange={(v) => update({ ollama_endpoint: v })}
+                placeholder="http://localhost:11434" />
+              <Field label="Model" value={settings.ollama_model || ""}
+                onChange={(v) => update({ ollama_model: v })}
+                placeholder="lfm2.5-thinking" />
+              <p className="text-xs text-muted-foreground">
+                Default: lfm2.5-thinking (1.2B). Pull with: docker compose exec ollama ollama pull lfm2.5-thinking
+              </p>
+            </>
           )}
 
           {settings.llm_provider === "lmstudio" && (
