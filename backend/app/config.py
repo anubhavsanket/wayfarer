@@ -59,39 +59,41 @@ class Settings(BaseSettings):
     #   qwen2.5:1.5b     89% avg, 0 empty,  7.5s,  30 tok,  940MB
     #   lfm2.5-thinking  87% avg, 2 empty, 13.2s, 1236 tok, 700MB
     #
-    # Classification (20 cases, synonym-mapped parser):
-    #   qwen2.5:1.5b     68% acc, 1.4s avg, 30 tok,  940MB
+    # Classification (20 cases, stability-tested at temperature=0.1):
+    #   qwen2.5:1.5b     40-50% acc, 1.4s avg, 30 tok, 940MB
+    #     (non-deterministic: 2/20 cases flip between runs at temp=0.1)
+    #     (outputs non-standard labels: "1-3 years", "advanced",
+    #      "intermediate", "professional" — not in standard set)
     #   qwen3:0.6b       32% acc, 3.2s avg, ~500 tok, 500MB
     #   qwen3:1.7b       26% acc, 4.2s avg, ~300 tok, 1.3GB
-    #   qwen3.5:2b       ~70%+, 120s+, 2618 tok, 2.6GB (thinking ON)
+    #   qwen3.5:2b       ~70%+ acc, 120s+, 2618 tok, 2.6GB (thinking ON)
     #
     # * qwen3:1.7b uses ~500 thinking tokens internally even with
     #   /no_think — suppressed from output but counted in eval_count.
     #
     # Raw-output analysis of /no_think classification failures:
     #   Two failure modes found in thinking models with /no_think:
-    #   (1) Non-standard labels: "entry-level" vs "fresher", "mid-level"
-    #       vs "mid", "Senior" vs "senior" — requires synonym mapping
+    #   (1) Non-standard labels: "entry-level", "mid-level", "Senior"
+    #       vs standard set — requires synonym mapping
     #   (2) Genuine errors: "Staff Engineer" → "Mid" (should be senior)
     #
-    # qwen3.5:2b (thinking ON) works correctly — raw output shows correct
-    # "Senior" for explicit_senior — but at 2618 tokens and 120s+/call,
-    # it's disqualifying for per-posting classification regardless.
-    # This confirms: /no_think breaks classification for small thinking
-    # models; preserving full thinking restores accuracy but at unacceptable
-    # latency. qwen2.5:1.5b (non-thinking) avoids both issues.
+    # Non-determinism confirmed: even at temperature=0.1, 2/20 cases
+    # flip between runs. Earlier accuracy numbers (74%, 68%) were
+    # inflated by comparing different runs — not reproducible.
+    # Real accuracy for qwen2.5:1.5b is 40-50%.
     #
-    # Decision: different models per tier.
+    # Decision: different models per tier (best available, not perfect).
     # - Simple tier (keyword extraction, classification): qwen2.5:1.5b
-    #   Non-thinking model, 68% classification accuracy, 1.4s, 30 tokens.
-    #   Outputs standard labels directly, no synonym mapping needed.
+    #   Non-thinking model, 40-50% classification accuracy, 1.4s.
+    #   Outputs non-standard labels but fastest and least token-hungry.
     # - Complex tier (bullet rewriting, synthesis): qwen3:1.7b
     #   Thinking model, 97% rewrite accuracy, 16s avg.
     #   /no_think suppresses output but ~500 tokens still consumed
     #   internally (visible in eval_count, not in content).
     # VRAM: 940MB + 1.3GB + 260MB embed = 2.76GB (1.2GB headroom on 4GB).
     # Both models coexist without cold-start swap risk.
-    # Eval scripts: backend/eval_rewrite.py, backend/eval_classify.py
+    # Eval scripts: backend/eval_rewrite.py, backend/eval_classify.py,
+    #               backend/eval_stability.py (determinism check)
     OLLAMA_MODEL: str = "qwen2.5:1.5b"
     LLM_MODELS: dict = {
         "simple": {
