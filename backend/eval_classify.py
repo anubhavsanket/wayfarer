@@ -90,7 +90,7 @@ def parse_classification(response: str) -> str:
 
 
 async def run_benchmark():
-    models = ["qwen3:1.7b", "lfm2.5-thinking", "qwen2.5:1.5b"]
+    models = ["qwen3:0.6b", "qwen2.5:1.5b", "lfm2.5-thinking", "qwen3:1.7b"]
 
     async with httpx.AsyncClient(timeout=10) as client:
         resp = await client.get("http://localhost:11434/api/tags")

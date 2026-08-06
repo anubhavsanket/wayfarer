@@ -52,23 +52,32 @@ class Settings(BaseSettings):
 
     # ── Model selection (§12.5 — benchmarked per-tier) ────────────────
     # Evaluated on two benchmarks:
-    #   Generation (21 rewrite cases, 2048 max_tokens):
-    #     qwen3:1.7b      97% avg, 0 empty, 16.0s, 1.3GB
-    #     qwen2.5:1.5b     89% avg, 0 empty,  7.5s, 940MB
-    #   Classification (20 experience-level cases):
-    #     qwen2.5:1.5b     70% acc, 1.4s, 940MB
-    #     qwen3:1.7b       25% acc, 4.2s, 1.3GB (breaks with /no_think)
-    #     lfm2.5-thinking  10% acc, 3.2s, 700MB
+    #
+    # Generation (21 rewrite cases, 2048 max_tokens, /no_think for qwen3):
+    #   qwen3:1.7b      97% avg, 0 empty, 16.0s, 542 tok*, 1.3GB
+    #   llama3.2:3b      90% avg, 0 empty, 18.1s,  41 tok,  1.9GB
+    #   qwen2.5:1.5b     89% avg, 0 empty,  7.5s,  30 tok,  940MB
+    #   lfm2.5-thinking  87% avg, 2 empty, 13.2s, 1236 tok, 700MB
+    #
+    # Classification (20 experience-level cases):
+    #   qwen2.5:1.5b     70% acc, 9.5s avg, 940MB
+    #   qwen3:0.6b       40% acc, 3.2s avg, ~500MB
+    #   qwen3:1.7b       25% acc, 12.7s avg, 1.3GB (breaks with /no_think)
+    #   lfm2.5-thinking  10% acc, 3.1s avg, 700MB
+    #
+    # * qwen3:1.7b uses ~500 thinking tokens internally even with
+    #   /no_think — suppressed from output but counted in eval_count.
+    #   This is why it's slower despite smaller model size.
+    #
+    # Key insight: thinking models (qwen3, lfm2.5) fail classification
+    # because /no_think suppresses the reasoning chain needed to
+    # determine experience level. Non-thinking models (qwen2.5) work.
     #
     # Decision: different models per tier.
     # - Simple tier (keyword extraction, classification): qwen2.5:1.5b
-    #   Non-thinking model, fast (1.4s), 70% classification accuracy.
-    #   Thinking models (qwen3, lfm2.5) fail classification because
-    #   /no_think skips the reasoning needed for level determination.
+    #   Non-thinking model, 70% classification accuracy, fast.
     # - Complex tier (bullet rewriting, synthesis): qwen3:1.7b
-    #   Thinking model, 97% rewrite accuracy, 16s avg.
-    #   /no_think suppresses output but ~500 tokens still consumed
-    #   internally (visible in eval_count, not in content).
+    #   Thinking model, 97% rewrite accuracy, needs /no_think.
     # VRAM: 940MB + 1.3GB + 260MB embed = 2.76GB (1.2GB headroom on 4GB).
     # Both models coexist without cold-start swap risk.
     # Eval scripts: backend/eval_rewrite.py, backend/eval_classify.py
