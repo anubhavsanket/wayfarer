@@ -167,7 +167,6 @@ async def check_resume(
     cached = resume_cache.get(cache_key)
     if cached is not None:
         logger.info("Cache hit for resume check (key=%s...)", cache_key[:12])
-        from ..models.schemas import KeywordGap, ConfidenceTier
         gaps = [KeywordGap(**g) for g in cached["keyword_gaps"]]
         return ResumeCheckResponse(
             resume_id=cached.get("resume_id", resume_id),
