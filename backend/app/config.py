@@ -50,9 +50,16 @@ class Settings(BaseSettings):
         "custom": {"requests": 60, "window": 60},
     }
 
-    # ── Model selection (§12.5 right-sizing) ────────────────────────────
-    # Default: lfm2.5-thinking (1.2B) — fast, capable, fits in 4GB VRAM
-    # Users can override via Settings page → stored in localStorage → sent as headers
+    # ── Model selection (§12.5 right-sizing — benchmarked) ─────────────
+    # Evaluated lfm2.5-thinking (1.2B) vs llama3.2:3b (3B) on 6 bullet
+    # rewrite cases. Results: lfm avg 47%, llama avg 80%. lfm returns
+    # empty strings on generation tasks but classifies well.
+    #
+    # Decision: tiers use different models after evaluation.
+    # - Simple tier (keyword extraction, classification): lfm2.5-thinking
+    #   Fast (2.8s avg), accurate for structured extraction tasks.
+    # - Complex tier (bullet rewriting, synthesis): llama3.2:3b
+    #   Higher quality generation, preserves metrics and terminology.
     OLLAMA_MODEL: str = "lfm2.5-thinking"
     LLM_MODELS: dict = {
         "simple": {
@@ -63,7 +70,7 @@ class Settings(BaseSettings):
         "complex": {
             "nvidia": "meta/llama-3.1-8b-instruct",
             "openrouter": "meta-llama/llama-3.1-8b-instruct",
-            "ollama": "lfm2.5-thinking",
+            "ollama": "llama3.2:3b",
         },
     }
 
