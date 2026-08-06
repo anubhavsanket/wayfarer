@@ -94,24 +94,39 @@ def _normalise_postings(postings: list[JobPosting]) -> list[JobPosting]:
 async def _check_url_liveness(matches: list[JobMatch], max_checks: int = 20) -> list[JobMatch]:
     """Lightweight HEAD check on apply URLs — flag dead links (§9.6 acceptance).
 
-    Only checks the top max_checks results to bound latency.
+    Runs concurrently with a single client to bound latency.
+    Only checks the top max_checks results.
     """
     import httpx as _httpx
-    checked = 0
-    for m in matches[:max_checks]:
+    import asyncio
+
+    async def _check_one(client: _httpx.AsyncClient, m: JobMatch) -> bool:
+        """Check if a URL is alive. Returns True if dead."""
         if not m.apply_url:
-            continue
+            return False
         try:
-            async with _httpx.AsyncClient(timeout=5, follow_redirects=True) as client:
-                resp = await client.head(m.apply_url)
-                if resp.status_code >= 400:
-                    m.flags.append("dead_link")
+            resp = await client.head(m.apply_url, follow_redirects=True)
+            return resp.status_code >= 400
         except Exception:
+            return True
+
+    to_check = [m for m in matches[:max_checks] if m.apply_url]
+    if not to_check:
+        return matches
+
+    async with _httpx.AsyncClient(timeout=5) as client:
+        results = await asyncio.gather(
+            *[_check_one(client, m) for m in to_check],
+            return_exceptions=True,
+        )
+
+    for m, result in zip(to_check, results):
+        if result is True:  # True = dead
             m.flags.append("dead_link")
-        checked += 1
-    dead = sum(1 for m in matches[:max_checks] if "dead_link" in m.flags)
+
+    dead = sum(1 for m in to_check if "dead_link" in m.flags)
     if dead:
-        logger.info("URL liveness check: %d/%d dead links found", dead, checked)
+        logger.info("URL liveness check: %d/%d dead links found", dead, len(to_check))
     return matches
 
 
@@ -170,9 +185,10 @@ async def _compute_semantic_scores(
             scored.append((posting, 0.0))
             continue
         try:
-            # §12.6: Strip boilerplate + truncate to ~8000 chars (~2000 tokens)
+            # §12.6: Strip boilerplate + truncate to ~4000 chars (~1000 tokens)
+            # nomic-embed-text has 8192 token limit; 4000 chars is safer
             from .legitimacy import _strip_boilerplate
-            desc = _strip_boilerplate(posting.description)[:8000]
+            desc = _strip_boilerplate(posting.description)[:4000]
             jd_vec = await router.embed(desc)
             score = cosine_similarity(resume_vec, jd_vec)
         except Exception as exc:
