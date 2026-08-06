@@ -35,7 +35,13 @@ logger = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 
 async def _extract_jd_keywords(jd_text: str) -> list[str]:
-    """Extract skills/tools/certifications keywords from a JD via the LLM router."""
+    """Extract skills/tools/certifications keywords from a JD via the LLM router.
+
+    §12.6: Strips boilerplate (EEO, benefits, about-us) before extraction.
+    """
+    from .legitimacy import _strip_boilerplate
+    jd_text = _strip_boilerplate(jd_text)
+
     prompt = (
         "Extract the key technical and professional keywords (skills, tools, "
         "languages, frameworks, certifications) a candidate must demonstrate "
@@ -147,16 +153,44 @@ async def check_resume(
 ) -> ResumeCheckResponse:
     """Run the full Stage 2 ATS check for a resume file against a JD.
 
+    §12.4: Results are cached by hash(resume_content + jd_text) so
+    re-running the same check is instant.
+
     If ``resume_id`` is provided, the parsed resume is persisted via
     :mod:`resume_store` so ``/resume/save`` can apply accepted suggestions.
     """
+    # §12.4: Check cache first
+    from ..utils.cache import resume_cache
+    resume_bytes = Path(resume_path).read_bytes()
+    cache_key = resume_cache.make_key(resume_bytes, jd_text.encode())
+    cached = resume_cache.get(cache_key)
+    if cached is not None:
+        logger.info("Cache hit for resume check (key=%s...)", cache_key[:12])
+        from ..models.schemas import KeywordGap, ConfidenceTier
+        gaps = [KeywordGap(**g) for g in cached["keyword_gaps"]]
+        return ResumeCheckResponse(
+            resume_id=cached.get("resume_id", resume_id),
+            ats_score=cached["ats_score"],
+            structural_issues=[],
+            keyword_gaps=gaps,
+        )
+
     # 1. Parse resume (structured + ATS-visible text + structural issues)
     parsed = parse_resume(resume_path)
 
     # Persist the parsed resume for later save (if we have an id)
     if resume_id:
-        from .resume_store import save_parsed
+        from .resume_store import save_parsed, save_graph
         save_parsed(resume_id, parsed)
+
+        # §12.1: Extract resume entity graph for token-efficient matching
+        from ..core.resume_graph import extract_resume_graph
+        skills_text = "\n".join(parsed.sections.get("skills", []))
+        graph = extract_resume_graph(
+            [{"section": b.section, "text": b.text} for b in parsed.bullets],
+            skills_raw=skills_text,
+        )
+        save_graph(resume_id, graph.to_dict())
 
     # 2. Extract JD keywords
     keywords = await _extract_jd_keywords(jd_text)
@@ -223,6 +257,14 @@ async def check_resume(
 
     # 4. Compute ATS score
     ats_score = _compute_ats_score(parsed, keyword_gaps)
+
+    # §12.4: Cache the result
+    cache_key = resume_cache.make_key(resume_bytes, jd_text.encode())
+    resume_cache.set(cache_key, {
+        "resume_id": resume_id,
+        "ats_score": ats_score,
+        "keyword_gaps": [g.model_dump() for g in keyword_gaps],
+    })
 
     return ResumeCheckResponse(
         resume_id=resume_id,

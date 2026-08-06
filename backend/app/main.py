@@ -302,6 +302,15 @@ async def set_primary_resume(
     try:
         parsed = parse_resume(str(saved_path))
         resume_store.save_parsed(resume_id, parsed)
+
+        # §12.1: Extract resume entity graph for token-efficient matching
+        from .core.resume_graph import extract_resume_graph
+        skills_text = "\n".join(parsed.sections.get("skills", []))
+        graph = extract_resume_graph(
+            [{"section": b.section, "text": b.text} for b in parsed.bullets],
+            skills_raw=skills_text,
+        )
+        resume_store.save_graph(resume_id, graph.to_dict())
     except ValueError as exc:
         # Parser explicitly rejected the file (e.g. image-based PDF) —
         # surface the error so the user can try DOCX instead.

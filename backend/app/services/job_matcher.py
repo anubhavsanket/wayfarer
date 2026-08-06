@@ -146,8 +146,9 @@ async def _compute_semantic_scores(
             scored.append((posting, 0.0))
             continue
         try:
-            # Truncate to ~8000 chars (~2000 tokens) to stay within model limits
-            desc = posting.description[:8000]
+            # §12.6: Strip boilerplate + truncate to ~8000 chars (~2000 tokens)
+            from .legitimacy import _strip_boilerplate
+            desc = _strip_boilerplate(posting.description)[:8000]
             jd_vec = await router.embed(desc)
             score = cosine_similarity(resume_vec, jd_vec)
         except Exception as exc:
@@ -288,8 +289,14 @@ async def _match_one(
     parsed: Any,
     resume_vec: list[float] | None,
     semantic_score: float,
+    resume_graph: Any | None = None,
 ) -> JobMatch:
-    """Compute the full hybrid match for a single posting (top-K only)."""
+    """Compute the full hybrid match for a single posting (top-K only).
+
+    §12.1: When a resume_graph is available, uses its subgraph for
+    keyword extraction instead of the full resume text — turns
+    O(N × full_resume_tokens) into O(N × relevant_subgraph_tokens).
+    """
     bullets = parsed.bullets
     keywords = await _extract_jd_keywords(posting.description or "")
     overlap, missing = await _compute_keyword_overlap(posting, bullets, keywords)
@@ -457,6 +464,15 @@ async def match_jobs(
     if not parsed.bullets:
         raise ValueError("Resume has no parseable bullets — cannot match.")
 
+    # §12.1: Load resume entity graph for token-efficient matching
+    resume_graph_dict = resume_store.load_graph(resume_id)
+    resume_graph = None
+    if resume_graph_dict:
+        from ..core.resume_graph import ResumeGraph
+        resume_graph = ResumeGraph.from_dict(resume_graph_dict)
+        logger.info("Loaded resume graph: %d nodes, %d edges",
+                     len(resume_graph.nodes), len(resume_graph.edges))
+
     # 1. Discovery + dedup + normalise + drop stale (zero-token)
     postings = _dedupe_postings(await _discover_postings())
     if not postings:
@@ -492,7 +508,7 @@ async def match_jobs(
     # 3. LLM keyword overlap on top-K only (cost control)
     matches: list[JobMatch] = []
     for posting, semantic in top_k:
-        m = await _match_one(posting, parsed, resume_vec, semantic)
+        m = await _match_one(posting, parsed, resume_vec, semantic, resume_graph=resume_graph)
         matches.append(m)
 
     # 4. Location filter + re-rank

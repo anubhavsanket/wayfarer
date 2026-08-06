@@ -109,6 +109,32 @@ def load_parsed(resume_id: str) -> ParsedResume | None:
         return None
 
 
+# ---------------------------------------------------------------------------
+# Resume graph storage (§12.1)
+# ---------------------------------------------------------------------------
+
+def save_graph(resume_id: str, graph_dict: dict[str, Any]) -> None:
+    """Persist the resume entity graph alongside parsed.json."""
+    rdir = _resume_dir(resume_id)
+    rdir.mkdir(parents=True, exist_ok=True)
+    (rdir / "graph.json").write_text(
+        json.dumps(graph_dict, indent=2),
+        encoding="utf-8",
+    )
+
+
+def load_graph(resume_id: str) -> dict[str, Any] | None:
+    """Load a previously-saved resume graph, or None."""
+    path = _resume_dir(resume_id) / "graph.json"
+    if not path.exists():
+        return None
+    try:
+        return json.loads(path.read_text(encoding="utf-8"))
+    except (json.JSONDecodeError, OSError) as exc:
+        logger.warning("Failed to load resume graph %s: %s", resume_id, exc)
+        return None
+
+
 def original_file_path(resume_id: str) -> Path | None:
     """Path to the original uploaded resume file, or None."""
     rdir = _resume_dir(resume_id)

@@ -50,9 +50,9 @@ class Settings(BaseSettings):
         "custom": {"requests": 60, "window": 60},
     }
 
-    # ── Model selection ─────────────────────────────────────────────────
-    # Both tiers use the same model per provider to keep things simple.
-    # For LM Studio / custom: the LMSTUDIO_MODEL / CUSTOM_LLM_MODEL is used.
+    # ── Model selection (§12.5 right-sizing) ────────────────────────────
+    # Simple tier: keyword extraction, classification, extraction
+    # Complex tier: bullet rewriting, synthesis, nuanced matching
     LLM_MODELS: dict = {
         "simple": {
             "nvidia": "meta/llama-3.1-8b-instruct",
