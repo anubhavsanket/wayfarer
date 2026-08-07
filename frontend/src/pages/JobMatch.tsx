@@ -8,75 +8,85 @@ import {
 import { api } from "@/lib/api";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import { Sticker } from "@/components/ui/badge";
+import { ScoreBar } from "@/components/ui/progress";
+import { Reveal, Stagger } from "@/components/Reveal";
+import { LoadingIndicator } from "@/components/LoadingIndicator";
 
-function locationBadge(match: string) {
-  if (match === "exact") return "bg-green-100 text-green-800";
-  if (match === "remote") return "bg-blue-100 text-blue-800";
-  if (match === "relocation_required") return "bg-yellow-100 text-yellow-800";
-  return "bg-gray-100 text-gray-800";
+/* ── helpers ────────────────────────────────────────────────────────── */
+
+function locationVariant(match: string) {
+  if (match === "exact") return "verified";
+  if (match === "remote") return "blue";
+  if (match === "relocation_required") return "reworded";
+  return "muted";
 }
 
-function experienceBadge(level: string) {
-  if (level === "fresher") return "bg-emerald-100 text-emerald-800";
-  if (level === "junior") return "bg-sky-100 text-sky-800";
-  if (level === "mid") return "bg-orange-100 text-orange-800";
-  if (level === "senior") return "bg-purple-100 text-purple-800";
-  return "bg-gray-100 text-gray-600";
+function experienceVariant(level: string) {
+  if (level === "fresher") return "cyan";
+  if (level === "junior") return "blue";
+  if (level === "mid") return "muted";
+  if (level === "senior") return "ink";
+  return "muted";
 }
 
-function sourceColor(source: string) {
-  if (source === "bluedoor") return "bg-teal-50 text-teal-700 border-teal-200";
-  if (source === "linkedin") return "bg-blue-50 text-blue-700 border-blue-200";
-  return "bg-gray-50 text-gray-700 border-gray-200";
+function sourceVariant(source: string) {
+  if (source === "bluedoor") return "cyan";
+  if (source === "linkedin") return "blue";
+  return "muted";
 }
+
+/* ── Job Card ───────────────────────────────────────────────────────── */
 
 function JobCard({ job }: { job: any }) {
   return (
-    <Card className="p-4 hover:shadow-md transition-shadow">
-      <div className="flex items-start justify-between">
-        <div className="flex-1 min-w-0">
+    <Card className="p-5">
+      <div className="flex items-start justify-between gap-4">
+        <div className="min-w-0 flex-1">
+          {/* Title + company */}
           <div className="flex items-center gap-2 flex-wrap">
-            <Briefcase className="h-4 w-4 text-muted-foreground shrink-0" />
-            <span className="font-medium truncate">{job.title}</span>
+            <Briefcase className="h-4 w-4 shrink-0 text-blue" />
+            <span className="font-display truncate font-bold">{job.title}</span>
             <span className="text-sm text-muted-foreground shrink-0">@ {job.company}</span>
           </div>
-          <div className="mt-1.5 flex items-center gap-2 flex-wrap">
-            <span className={`inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-xs font-medium ${locationBadge(job.location_match)}`}>
+
+          {/* Stickers row */}
+          <div className="mt-2 flex flex-wrap items-center gap-2">
+            <Sticker variant={locationVariant(job.location_match)}>
               <MapPin className="h-3 w-3" />
-              {job.location || "Location N/A"}
-            </span>
-            <span className={`rounded border px-1.5 py-0.5 text-xs font-medium ${sourceColor(job.source)}`}>
+              {job.location || "N/A"}
+            </Sticker>
+            <Sticker variant={sourceVariant(job.source)}>
               {job.source}
-            </span>
-            <span className={`rounded px-1.5 py-0.5 text-xs font-medium ${experienceBadge(job.experience_level)}`}>
-              {job.experience_level === "fresher" && <GraduationCap className="inline h-3 w-3 mr-0.5" />}
-              {job.experience_level}
-            </span>
+            </Sticker>
+            {job.experience_level && (
+              <Sticker variant={experienceVariant(job.experience_level)}>
+                {job.experience_level === "fresher" && <GraduationCap className="h-3 w-3" />}
+                {job.experience_level}
+              </Sticker>
+            )}
             {job.flags?.map((flag: string) => (
-              <span
-                key={flag}
-                className="rounded bg-red-50 px-1.5 py-0.5 font-medium text-red-700 text-xs"
-                title="Potential legitimacy issue — review before applying"
-              >
-                ⚠ {flag}
+              <span key={flag} title="Potential legitimacy issue — review before applying">
+                <Sticker variant="destructive">⚠ {flag}</Sticker>
               </span>
             ))}
           </div>
+
+          {/* Gap chips */}
           {job.top_gaps?.length > 0 && (
             <div className="mt-2 flex flex-wrap gap-1">
               {job.top_gaps.map((g: string, i: number) => (
-                <span
-                  key={i}
-                  className="rounded bg-muted px-1.5 py-0.5 text-xs text-muted-foreground"
-                >
+                <Sticker key={i} variant="muted">
                   {g}
-                </span>
+                </Sticker>
               ))}
             </div>
           )}
         </div>
-        <div className="flex flex-col items-end gap-2 pl-4 shrink-0">
-          <span className="text-2xl font-bold">
+
+        {/* Score + Apply */}
+        <div className="flex shrink-0 flex-col items-end gap-2 pl-4">
+          <span className="font-display text-3xl font-bold tabular-nums leading-none">
             {(job.match_score * 100).toFixed(0)}%
           </span>
           {job.apply_url && (
@@ -84,7 +94,7 @@ function JobCard({ job }: { job: any }) {
               href={job.apply_url}
               target="_blank"
               rel="noopener noreferrer"
-              className="inline-flex items-center gap-1 rounded bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground hover:bg-primary/90"
+              className="inline-flex items-center gap-1 rounded-md border-2 border-ink bg-blue px-3 py-1.5 text-xs font-semibold text-white shadow-hard-sm transition-all duration-150 hover:-translate-y-0.5 hover:shadow-hard active:translate-y-0.5 active:shadow-hard-none"
             >
               Apply
               <ExternalLink className="h-3 w-3" />
@@ -96,13 +106,157 @@ function JobCard({ job }: { job: any }) {
   );
 }
 
+/* ── Filter Panel ───────────────────────────────────────────────────── */
+
+function FilterPanel({
+  locationMode, setLocationMode,
+  cityFilter, setCityFilter,
+  remoteOk, setRemoteOk,
+  maxAgeDays, setMaxAgeDays,
+  minScore, setMinScore,
+  sourceFilter, setSourceFilter,
+  onReset, onApply, filtersChanged,
+}: {
+  locationMode: string; setLocationMode: (v: string) => void;
+  cityFilter: string; setCityFilter: (v: string) => void;
+  remoteOk: boolean; setRemoteOk: (v: boolean) => void;
+  maxAgeDays: number; setMaxAgeDays: (v: number) => void;
+  minScore: number; setMinScore: (v: number) => void;
+  sourceFilter: string; setSourceFilter: (v: string) => void;
+  onReset: () => void;
+  onApply: () => void;
+  filtersChanged: boolean;
+}) {
+  const AVAILABLE_SOURCES = [
+    "remoteok", "remotive", "jobicy", "arbeitnow", "himalayas",
+    "bluedoor", "linkedin_guest", "adzuna",
+  ];
+
+  return (
+    <div className="mt-4 space-y-4 rounded-lg border-2 border-ink bg-card p-4 shadow-hard-sm">
+      {/* Location */}
+      <div className="space-y-1.5">
+        <label className="text-sm font-semibold">Location</label>
+        <div className="flex gap-2">
+          <select
+            value={locationMode}
+            onChange={(e) => setLocationMode(e.target.value)}
+            className="rounded-md border-2 border-ink bg-cream px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-cyan"
+          >
+            <option value="specific_city">Specific city</option>
+            <option value="remote_only">Remote only</option>
+            <option value="hybrid">Hybrid</option>
+            <option value="open_to_relocation">Open to relocation</option>
+          </select>
+          {locationMode === "specific_city" && (
+            <input
+              type="text"
+              value={cityFilter}
+              onChange={(e) => setCityFilter(e.target.value)}
+              placeholder="e.g. Bengaluru"
+              className="flex-1 rounded-md border-2 border-ink bg-cream px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-cyan"
+            />
+          )}
+        </div>
+        {locationMode === "specific_city" && (
+          <label className="flex cursor-pointer items-center gap-2 text-xs text-muted-foreground">
+            <input
+              type="checkbox"
+              checked={remoteOk}
+              onChange={(e) => setRemoteOk(e.target.checked)}
+              className="accent-cyan"
+            />
+            Include remote postings
+          </label>
+        )}
+      </div>
+
+      {/* Posting age slider */}
+      <div className="space-y-1.5">
+        <label className="text-sm font-semibold">
+          Posting age: up to {maxAgeDays} day{maxAgeDays !== 1 ? "s" : ""} old
+        </label>
+        <input
+          type="range"
+          min={1} max={90} value={maxAgeDays}
+          onChange={(e) => setMaxAgeDays(parseInt(e.target.value))}
+          className="w-full accent-blue"
+        />
+        <div className="flex justify-between text-[10px] font-mono text-muted-foreground">
+          <span>1d</span><span>30d</span><span>90d</span>
+        </div>
+      </div>
+
+      {/* Min score slider */}
+      <div className="space-y-1.5">
+        <label className="text-sm font-semibold">Minimum match: {minScore}%</label>
+        <input
+          type="range"
+          min={0} max={80} step={5} value={minScore}
+          onChange={(e) => setMinScore(parseInt(e.target.value))}
+          className="w-full accent-blue"
+        />
+        <div className="flex justify-between text-[10px] font-mono text-muted-foreground">
+          <span>0%</span><span>40%</span><span>80%</span>
+        </div>
+      </div>
+
+      {/* Job sources */}
+      <div className="space-y-1.5">
+        <label className="text-sm font-semibold">Job Sources</label>
+        <div className="flex flex-wrap gap-2">
+          {AVAILABLE_SOURCES.map((src) => (
+            <label key={src} className="flex cursor-pointer items-center gap-1.5 text-xs">
+              <input
+                type="checkbox"
+                checked={!sourceFilter || sourceFilter.split(",").includes(src)}
+                onChange={(e) => {
+                  const current = sourceFilter ? sourceFilter.split(",") : [...AVAILABLE_SOURCES];
+                  if (e.target.checked) current.push(src);
+                  else {
+                    const idx = current.indexOf(src);
+                    if (idx >= 0) current.splice(idx, 1);
+                  }
+                  setSourceFilter(current.join(","));
+                }}
+                className="accent-blue"
+              />
+              {src}
+            </label>
+          ))}
+        </div>
+        <p className="text-[10px] font-mono text-muted-foreground">
+          {sourceFilter ? `${sourceFilter.split(",").length}/${AVAILABLE_SOURCES.length} sources active` : "All sources active"}
+        </p>
+      </div>
+
+      {/* Reset */}
+      <button onClick={onReset} className="text-xs font-semibold text-muted-foreground underline hover:text-foreground">
+        Reset all filters
+      </button>
+
+      {/* Apply */}
+      <Button onClick={onApply} disabled={!filtersChanged} className="w-full">
+        Apply Filters
+        {filtersChanged && (
+          <span className="ml-2 rounded bg-cyan px-1.5 py-0.5 text-[10px] font-bold text-ink">
+            unsaved
+          </span>
+        )}
+      </Button>
+    </div>
+  );
+}
+
+/* ── Main Page ──────────────────────────────────────────────────────── */
+
 export default function JobMatchPage() {
   const [testMode, setTestMode] = useState(true);
   const [fresherOnly, setFresherOnly] = useState(false);
   const [showUnclear, setShowUnclear] = useState(false);
   const [showFilters, setShowFilters] = useState(false);
 
-  // Editable filter state (changes as user adjusts sliders)
+  // Editable filter state
   const [maxAgeDays, setMaxAgeDays] = useState(30);
   const [minScore, setMinScore] = useState(0);
   const [cityFilter, setCityFilter] = useState("");
@@ -110,27 +264,35 @@ export default function JobMatchPage() {
   const [remoteOk, setRemoteOk] = useState(false);
   const [sourceFilter, setSourceFilter] = useState("");
 
-  // Committed filter state (only changes on "Apply" click — prevents unnecessary API calls)
+  // Committed filter state (only changes on "Apply" click)
   const [appliedFilters, setAppliedFilters] = useState({
     maxAgeDays: 30, minScore: 0, cityFilter: "", locationMode: "specific_city",
     remoteOk: false, sourceFilter: "",
   });
-  // Check if local filters differ from committed
-  const filtersChanged = maxAgeDays !== appliedFilters.maxAgeDays
-    || minScore !== appliedFilters.minScore
-    || cityFilter !== appliedFilters.cityFilter
-    || locationMode !== appliedFilters.locationMode
-    || remoteOk !== appliedFilters.remoteOk
-    || sourceFilter !== appliedFilters.sourceFilter;
+
+  const filtersChanged =
+    maxAgeDays !== appliedFilters.maxAgeDays ||
+    minScore !== appliedFilters.minScore ||
+    cityFilter !== appliedFilters.cityFilter ||
+    locationMode !== appliedFilters.locationMode ||
+    remoteOk !== appliedFilters.remoteOk ||
+    sourceFilter !== appliedFilters.sourceFilter;
 
   const applyFilters = () => {
     setAppliedFilters({ maxAgeDays, minScore, cityFilter, locationMode, remoteOk, sourceFilter });
   };
 
-  // Available sources (matches job_boards.yaml enabled boards)
-  const AVAILABLE_SOURCES = ["remoteok", "remotive", "jobicy", "arbeitnow", "himalayas", "bluedoor", "linkedin_guest", "adzuna"];
+  const resetFilters = () => {
+    setMaxAgeDays(30);
+    setMinScore(0);
+    setCityFilter("");
+    setLocationMode("specific_city");
+    setRemoteOk(false);
+    setSourceFilter("");
+    setAppliedFilters({ maxAgeDays: 30, minScore: 0, cityFilter: "", locationMode: "specific_city", remoteOk: false, sourceFilter: "" });
+  };
 
-  // FR2.12 (§8.6): resolve primary resume from backend
+  // Primary resume
   const { data: primary } = useQuery({
     queryKey: ["resume-primary"],
     queryFn: () => api.getResumePrimary(),
@@ -157,257 +319,143 @@ export default function JobMatchPage() {
   const totalResults = (data?.matches?.length ?? 0) + (data?.unclear_matches?.length ?? 0);
 
   return (
-    <div className="space-y-6">
-      {/* Controls */}
+    <div className="space-y-4">
+      {/* ── Controls ─────────────────────────────────────────── */}
       <Card className="p-6">
-        <h2 className="mb-2 text-lg font-semibold">Job Matcher</h2>
+        <h2 className="font-display mb-1 text-lg font-bold">Job Matcher</h2>
         <p className="mb-4 text-sm text-muted-foreground">
           {hasResume
             ? "Matching postings against your main resume."
             : "Upload your resume in Settings first, then come back here."}
         </p>
+
         {hasResume ? (
-          <div className="mb-3 flex items-center gap-2 rounded-md bg-muted p-3 text-sm">
-            <Briefcase className="h-4 w-4" />
-            <span>{resumeFileName || "Resume loaded"}</span>
-            <span className="text-xs text-muted-foreground">
-              ({primary?.resume_id || resumeId})
-            </span>
-            <button
+          <div className="mb-3 flex flex-wrap items-center gap-3 rounded-md bg-beige-deep p-3 text-sm border-2 border-ink/20">
+            <div className="flex items-center gap-2 min-w-0">
+              <Briefcase className="h-4 w-4 shrink-0 text-blue" />
+              <span className="font-medium truncate">{resumeFileName || "Resume loaded"}</span>
+              <span className="text-xs text-muted-foreground">
+                ({primary?.resume_id || resumeId})
+              </span>
+            </div>
+            <Button
               onClick={() => refetch()}
               disabled={isLoading}
-              className="ml-auto rounded-md bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
+              size="sm"
             >
               {isLoading ? "Loading..." : "Find Matches"}
-            </button>
+            </Button>
           </div>
         ) : (
-          <div className="rounded-md bg-yellow-50 p-3 text-sm text-yellow-800">
-            No resume uploaded yet. Go to <strong>Settings</strong> → Primary Resume to upload your resume.
+          <div className="rounded-md border-2 border-ink bg-cream p-4 text-sm text-muted-foreground">
+            <span className="font-semibold text-foreground">No resume uploaded yet.</span>{" "}
+            Go to <strong>Settings</strong> → Primary Resume to upload your resume, then come back here to find matches.
           </div>
         )}
 
         {/* Toggle row */}
         <div className="flex flex-wrap items-center gap-4 text-xs text-muted-foreground">
-          <label className="flex items-center gap-2 cursor-pointer">
+          <label className="flex cursor-pointer items-center gap-2">
             <input
               type="checkbox"
               checked={testMode}
               onChange={(e) => setTestMode(e.target.checked)}
-              className="rounded"
+              className="accent-blue"
             />
             Sample data
           </label>
           <button
             onClick={() => setFresherOnly(!fresherOnly)}
-            className="flex items-center gap-1 cursor-pointer"
+            className="flex cursor-pointer items-center gap-1"
           >
-            {fresherOnly ? <ToggleRight className="h-4 w-4 text-primary" /> : <ToggleLeft className="h-4 w-4" />}
+            {fresherOnly
+              ? <ToggleRight className="h-4 w-4 text-blue" />
+              : <ToggleLeft className="h-4 w-4" />}
             Fresher mode
           </button>
           <button
             onClick={() => setShowFilters(!showFilters)}
-            className="flex items-center gap-1 cursor-pointer"
+            className="flex cursor-pointer items-center gap-1"
           >
             <SlidersHorizontal className="h-4 w-4" />
             Filters
-            {(maxAgeDays !== 30 || minScore !== 0 || cityFilter) && (
-              <span className="rounded-full bg-primary px-1.5 py-0.5 text-[10px] font-medium text-primary-foreground">
-                active
-              </span>
+            {filtersChanged && (
+              <Sticker variant="cyan" className="text-[10px]">active</Sticker>
             )}
           </button>
         </div>
 
-        {/* Expanded filters */}
         {showFilters && (
-          <div className="mt-4 space-y-4 rounded-md border p-4">
-            {/* Location filter */}
-            <div className="space-y-1.5">
-              <label className="text-sm font-medium">Location</label>
-              <div className="flex gap-2">
-                <select
-                  value={locationMode}
-                  onChange={(e) => setLocationMode(e.target.value)}
-                  className="rounded-md border bg-background px-2 py-1.5 text-sm"
-                >
-                  <option value="specific_city">Specific city</option>
-                  <option value="remote_only">Remote only</option>
-                  <option value="hybrid">Hybrid</option>
-                  <option value="open_to_relocation">Open to relocation</option>
-                </select>
-                {locationMode === "specific_city" && (
-                  <input
-                    type="text"
-                    value={cityFilter}
-                    onChange={(e) => setCityFilter(e.target.value)}
-                    placeholder="e.g. Bengaluru"
-                    className="flex-1 rounded-md border bg-background px-3 py-1.5 text-sm outline-none focus:ring-2 focus:ring-ring"
-                  />
-                )}
-              </div>
-              {locationMode === "specific_city" && (
-                <label className="flex items-center gap-2 text-xs text-muted-foreground cursor-pointer">
-                  <input
-                    type="checkbox"
-                    checked={remoteOk}
-                    onChange={(e) => setRemoteOk(e.target.checked)}
-                    className="rounded"
-                  />
-                  Include remote postings
-                </label>
-              )}
-            </div>
-
-            {/* Posting age slider */}
-            <div className="space-y-1.5">
-              <label className="text-sm font-medium">
-                Posting age: up to {maxAgeDays} day{maxAgeDays !== 1 ? "s" : ""} old
-              </label>
-              <input
-                type="range"
-                min={1}
-                max={90}
-                value={maxAgeDays}
-                onChange={(e) => setMaxAgeDays(parseInt(e.target.value))}
-                className="w-full accent-primary"
-              />
-              <div className="flex justify-between text-[10px] text-muted-foreground">
-                <span>1 day</span>
-                <span>30 days</span>
-                <span>90 days</span>
-              </div>
-            </div>
-
-            {/* Minimum score slider */}
-            <div className="space-y-1.5">
-              <label className="text-sm font-medium">
-                Minimum match: {minScore}%
-              </label>
-              <input
-                type="range"
-                min={0}
-                max={80}
-                step={5}
-                value={minScore}
-                onChange={(e) => setMinScore(parseInt(e.target.value))}
-                className="w-full accent-primary"
-              />
-              <div className="flex justify-between text-[10px] text-muted-foreground">
-                <span>Show all</span>
-                <span>40%</span>
-                <span>80%</span>
-              </div>
-            </div>
-
-            {/* Reset filters */}
-            <button
-              onClick={() => {
-                setMaxAgeDays(30);
-                setMinScore(0);
-                setCityFilter("");
-                setLocationMode("specific_city");
-                setRemoteOk(false);
-                setSourceFilter("");
-                setAppliedFilters({ maxAgeDays: 30, minScore: 0, cityFilter: "", locationMode: "specific_city", remoteOk: false, sourceFilter: "" });
-              }}
-              className="text-xs text-muted-foreground underline hover:text-foreground"
-            >
-              Reset all filters
-            </button>
-
-            {/* Apply button */}
-            <Button
-              onClick={applyFilters}
-              disabled={!filtersChanged}
-              className="w-full"
-            >
-              Apply Filters
-              {filtersChanged && <span className="ml-2 rounded-full bg-primary-foreground px-2 py-0.5 text-[10px] font-bold text-primary">unsaved</span>}
-            </Button>
-
-            {/* Job source filter */}
-            <div className="space-y-1.5">
-              <label className="text-sm font-medium">Job Sources</label>
-              <div className="flex flex-wrap gap-2">
-                {AVAILABLE_SOURCES.map((src) => (
-                  <label key={src} className="flex items-center gap-1.5 text-xs cursor-pointer">
-                    <input
-                      type="checkbox"
-                      checked={!sourceFilter || sourceFilter.split(",").includes(src)}
-                      onChange={(e) => {
-                        const current = sourceFilter ? sourceFilter.split(",") : [...AVAILABLE_SOURCES];
-                        if (e.target.checked) {
-                          current.push(src);
-                        } else {
-                          const idx = current.indexOf(src);
-                          if (idx >= 0) current.splice(idx, 1);
-                        }
-                        setSourceFilter(current.join(","));
-                      }}
-                      className="rounded"
-                    />
-                    {src}
-                  </label>
-                ))}
-              </div>
-              <p className="text-[10px] text-muted-foreground">
-                {sourceFilter ? `${sourceFilter.split(",").length}/${AVAILABLE_SOURCES.length} sources active` : "All sources active"}
-              </p>
-            </div>
-          </div>
+          <FilterPanel
+            locationMode={locationMode} setLocationMode={setLocationMode}
+            cityFilter={cityFilter} setCityFilter={setCityFilter}
+            remoteOk={remoteOk} setRemoteOk={setRemoteOk}
+            maxAgeDays={maxAgeDays} setMaxAgeDays={setMaxAgeDays}
+            minScore={minScore} setMinScore={setMinScore}
+            sourceFilter={sourceFilter} setSourceFilter={setSourceFilter}
+            onReset={resetFilters} onApply={applyFilters} filtersChanged={filtersChanged}
+          />
         )}
       </Card>
 
-      {/* Loading / Error */}
+      {/* Loading */}
       {isLoading && (
-        <Card className="p-6 text-center text-sm text-muted-foreground">Loading postings...</Card>
-      )}
-      {error && (
-        <Card className="border-destructive p-4 text-sm text-destructive">Error: {error.message}</Card>
+        <Reveal>
+          <LoadingIndicator message="Finding matches" />
+        </Reveal>
       )}
 
-      {/* Results */}
+      {/* Error */}
+      {error && (
+        <Card className="border-destructive p-4 text-sm text-destructive">
+          Error: {error.message}
+        </Card>
+      )}
+
+      {/* ── Results ─────────────────────────────────────────── */}
       {data && (
         <>
           {totalResults === 0 && !isLoading && (
-            <Card className="p-6 text-center text-sm text-muted-foreground">
-              No matches found. Try adjusting your filters or uploading a different resume.
+            <Card className="p-8 text-center">
+              <p className="mb-2 text-sm font-semibold">No matches found</p>
+              <p className="text-xs text-muted-foreground">
+                Try adjusting your filters, broadening your search, or uploading a different resume.
+              </p>
             </Card>
           )}
 
           {data.matches.length > 0 && (
-            <div>
-              <p className="mb-3 text-sm font-medium text-muted-foreground">
+            <Stagger className="space-y-3">
+              <p className="mb-1 text-sm font-semibold text-muted-foreground">
                 {data.matches.length} confirmed match{data.matches.length !== 1 ? "es" : ""}
                 {fresherOnly ? " (fresher/junior only)" : ""}
                 {minScore > 0 ? ` (≥${minScore}% match)` : ""}
               </p>
-              <div className="space-y-3">
-                {data.matches.map((job: any) => (
-                  <JobCard key={job.job_id} job={job} />
-                ))}
-              </div>
-            </div>
+              {data.matches.map((job: any) => (
+                <JobCard key={job.job_id} job={job} />
+              ))}
+            </Stagger>
           )}
 
-          {/* Unclear matches (collapsed by default) */}
+          {/* Unclear matches */}
           {data.unclear_matches && data.unclear_matches.length > 0 && (
             <div className="mt-4">
               <button
                 onClick={() => setShowUnclear(!showUnclear)}
-                className="flex items-center gap-2 text-sm text-muted-foreground hover:text-foreground mb-2"
+                className="flex items-center gap-2 text-sm font-semibold text-muted-foreground hover:text-foreground"
               >
-                {showUnclear ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
+                {showUnclear
+                  ? <ChevronUp className="h-4 w-4" />
+                  : <ChevronDown className="h-4 w-4" />}
                 {data.unclear_matches.length} unclear match{data.unclear_matches.length !== 1 ? "es" : ""}
-                <span className="text-xs">(experience level couldn't be determined)</span>
+                <span className="text-xs font-normal">(experience level couldn't be determined)</span>
               </button>
               {showUnclear && (
-                <div className="space-y-3">
+                <Stagger className="mt-3 space-y-3">
                   {data.unclear_matches.map((job: any) => (
                     <JobCard key={job.job_id} job={job} />
                   ))}
-                </div>
+                </Stagger>
               )}
             </div>
           )}
@@ -415,17 +463,19 @@ export default function JobMatchPage() {
           {/* Aggregate gaps */}
           {data.aggregate_gaps && data.aggregate_gaps.length > 0 && (
             <Card className="p-6">
-              <h3 className="mb-3 font-medium">
-                <AlertTriangle className="mr-1 inline h-4 w-4" />
-                Top Missing Skills Across Matched Postings
-              </h3>
-              <ul className="space-y-1 text-sm">
+              <Sticker variant="alert" className="mb-3">
+                <AlertTriangle className="h-3 w-3" /> Top Missing Skills
+              </Sticker>
+              <ul className="space-y-2">
                 {data.aggregate_gaps.map((g: any, i: number) => (
-                  <li key={i} className="flex justify-between">
-                    <span>{g.skill}</span>
-                    <span className="text-muted-foreground">
-                      missing in {(g.missing_in_pct * 100).toFixed(0)}%
-                    </span>
+                  <li key={i} className="flex items-center gap-3">
+                    <span className="flex-1 text-sm font-medium">{g.skill}</span>
+                    <ScoreBar
+                      value={(1 - g.missing_in_pct) * 100}
+                      decimals={0}
+                      suffix="%"
+                      className="w-48"
+                    />
                   </li>
                 ))}
               </ul>
