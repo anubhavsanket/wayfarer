@@ -1,3 +1,5 @@
+<img src="social-preview.png" alt="Wayfarer — AI-Powered Job Search" width="100%" />
+
 # Wayfarer
 
 > AI-Powered Job Search Automation Platform — locally-hosted, RAG-driven, with owned retrieval, scoring, and matching logic.
