@@ -115,8 +115,6 @@ export default function JobMatchPage() {
     maxAgeDays: 30, minScore: 0, cityFilter: "", locationMode: "specific_city",
     remoteOk: false, sourceFilter: "",
   });
-  const [hasUnappliedChanges, setHasUnappliedChanges] = useState(false);
-
   // Check if local filters differ from committed
   const filtersChanged = maxAgeDays !== appliedFilters.maxAgeDays
     || minScore !== appliedFilters.minScore
@@ -127,7 +125,6 @@ export default function JobMatchPage() {
 
   const applyFilters = () => {
     setAppliedFilters({ maxAgeDays, minScore, cityFilter, locationMode, remoteOk, sourceFilter });
-    setHasUnappliedChanges(false);
   };
 
   // Available sources (matches job_boards.yaml enabled boards)
