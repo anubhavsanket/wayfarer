@@ -66,7 +66,7 @@ export default function App() {
               <TabsTrigger
                 key={val}
                 value={val}
-                className="inline-flex items-center gap-2 rounded-md border-2 border-transparent px-4 py-2.5 text-sm font-semibold transition-all duration-150 data-[state=active]:border-ink data-[state=active]:bg-blue data-[state=active]:text-white dark:data-[state=active]:text-ink data-[state=active]:shadow-hard-blue data-[state=inactive]:text-ink dark:data-[state=inactive]:text-white data-[state=inactive]:hover:bg-accent data-[state=inactive]:hover:text-accent-foreground"
+                className="inline-flex items-center gap-2 rounded-md border-2 border-transparent px-4 py-2.5 text-sm font-semibold transition-all duration-150 data-[state=active]:border-ink data-[state=active]:bg-blue data-[state=active]:text-white dark:data-[state=active]:text-ink data-[state=active]:shadow-hard-blue data-[state=inactive]:text-ink dark:data-[state=inactive]:text-white dark:data-[state=inactive]:hover:bg-accent dark:data-[state=inactive]:hover:text-accent-foreground"
               >
                 <Icon className="h-4 w-4" />
                 {label}
