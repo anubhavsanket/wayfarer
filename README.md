@@ -1,79 +1,27 @@
-# Wayfarer — AI-Powered Job Search Automation Platform
+# Wayfarer
 
-> A locally-hosted, RAG-driven job search platform built in three connected stages:
-> a **web search agent**, a **RAG-based ATS resume checker with redlining**, and a
-> **live job-posting matcher**. The retrieval, scoring, and matching logic is owned
-> and built directly — not delegated to a general-purpose coding agent's context window.
-
-Built and designed to actually be used for the author's own job search. Calls out to
-free-tier APIs as fallback when local inference would blow the 4 GB VRAM budget.
-
-**Version: 1.1** — includes Fresher Mode, employment-type classification, LinkedIn
-integration, and background pipeline maintenance.
+> AI-Powered Job Search Automation Platform — locally-hosted, RAG-driven, with owned retrieval, scoring, and matching logic.
 
 ---
 
-## One-Command Setup
+## What Wayfarer Does
 
-```bash
-curl -sSL https://raw.githubusercontent.com/anubhavsanket/wayfarer/main/setup.sh | bash
-```
-
-Or clone manually:
-```bash
-git clone https://github.com/anubhavsanket/wayfarer.git
-cd wayfarer
-bash setup.sh
-```
-
-The script clones the repo, creates `.env`, pulls Docker images, starts all 5 services,
-and pulls the embedding model. Takes about 2 minutes on first run.
-
-After setup, open **http://localhost:3000** and go to the **Settings** tab to enter
-your API keys — or edit `.env` directly.
-
----
-
-## Table of contents
-
-1. [What Wayfarer does](#what-wayfarer-does)
-2. [Architecture](#architecture)
-3. [Quick start](#quick-start-docker-compose)
-4. [Local development](#local-development-no-docker)
-5. [Configuration](#configuration)
-6. [API reference](#api-reference)
-7. [The job board registry](#the-job-board-registry)
-8. [Testing](#testing)
-9. [What's in v1.1](#whats-in-v11)
-10. [Known limitations](#known-limitations)
-
----
-
-## What Wayfarer does
-
-| Stage | What it answers | Key endpoint |
+| Stage | What it answers | Endpoint |
 |---|---|---|
-| **1. Web Search Agent** | "Search the web for X and synthesize an answer with sources." | `POST /api/v1/search` |
-| **2. ATS Resume Checker** | "Check my resume against this JD, tell me exactly what to change and why." | `POST /api/v1/resume/check` |
-| **3. Job Matcher** | "Show me live postings ranked by fit, with apply links." | `GET /api/v1/jobs/match` |
+| **Web Search Agent** | "Search the web for X and synthesize an answer with sources." | `POST /api/v1/search` |
+| **ATS Resume Checker** | "Check my resume against this JD, tell me exactly what to change and why." | `POST /api/v1/resume/check` |
+| **Job Matcher** | "Show me live postings ranked by fit, with apply links." | `GET /api/v1/jobs/match` |
 
-Every output is **human-in-the-loop**: the system evaluates, ranks, and drafts — it
-never submits, auto-fills, or clicks anything on a third-party site on the user's
-behalf.
+Every output is **human-in-the-loop**: the system evaluates, ranks, and drafts — it never submits, auto-fills, or clicks anything on a third-party site on your behalf.
 
 ### Differentiators
 
-- **Owned RAG pipeline** — embeddings, vector store, hybrid scoring are all
-  in-process. No `Claude Code + LaTeX` or `prompt orchestration over markdown` here.
-- **Honest substitution** — every keyword suggestion in Stage 2 is traceable to a
-  real resume bullet. The hard rule: gaps stay gaps, never auto-inserted.
-- **Confidence-tiered redlines** — `Verified` / `Reworded` / `Gap`, the third of
-  which is genuinely surfaced, not hidden.
-- **Multi-provider inference** — rate-limit-aware router with NVIDIA NIM →
-  OpenRouter → local Ollama fallback. Free tiers only.
+- **Owned RAG pipeline** — embeddings, vector store, hybrid scoring are all in-process. No prompt orchestration over markdown.
+- **Honest substitution** — every keyword suggestion in Stage 2 is traceable to a real resume bullet. Gaps stay gaps, never auto-inserted.
+- **Confidence-tiered redlines** — `Verified` / `Reworded` / `Gap`, the third genuinely surfaced, not hidden.
+- **Multi-provider inference** — rate-limit-aware router with NVIDIA NIM → OpenRouter → Ollama fallback. Free tiers only.
 - **Config-driven job boards** — adding a board = a YAML entry, not a code change.
-- **Fresher Mode** — filter postings to entry-level/junior roles using a small
-  local LLM (qwen3:0.6b) for experience-level classification.
+- **Primary resume** — upload once in Settings, used across all stages automatically.
 
 ---
 
@@ -92,11 +40,11 @@ behalf.
 │   Stage 1       │      │       Stage 2         │     │       Stage 3         │
 │  Search Agent   │      │  Resume/ATS Checker    │     │   Job Matcher         │
 │                 │      │                        │     │                       │
-│ Search API      │      │ pdfplumber/python-docx │     │ bluedoor + LinkedIn   │
-│ (Tavily/Brave)  │      │ pdftotext ATS sim      │     │ Fresher Mode          │
-│ + Crawl4AI      │      │ Embedding matcher      │     │ Hybrid scoring        │
-│ fetch/clean     │      │ Confidence-tiered      │     │ Legitimacy checks     │
-│                 │      │ redline generator      │     │ Background refresh    │
+│ Search API      │      │ AnyDoc (14 formats)    │     │ 12 job sources        │
+│ (Tavily/Brave)  │      │ + OCR fallback         │     │ Hybrid scoring        │
+│ + Crawl4AI      │      │ Embedding matcher      │     │ Graph-filtered match  │
+│ fetch/clean     │      │ Confidence-tiered      │     │ Location/age/score    │
+│                 │      │ redline generator      │     │ filters + legitimacy  │
 └─────────────────┘      └────────────────────────┘     └───────────────────────┘
         │                           │                           │
         └───────────────────────────┴───────────────────────────┘
@@ -109,104 +57,255 @@ behalf.
                         └─────────────────────────┘
 ```
 
-**Shared infrastructure (build once, used in all 3 stages):**
-- **LLM Router** — `backend/app/llm_router.py`. Every stage calls inference through
-  this module, never directly against a provider. Supports 5 providers: NVIDIA NIM,
-  OpenRouter, Ollama (local), LM Studio (local), and any custom OpenAI-compatible
-  endpoint. Tracks per-provider rate limits and falls back automatically.
-- **Embedding layer** — `nomic-embed-text` via Ollama, kept local. Embeddings are
-  cheap enough on a GTX 1650 that they don't need router fallback.
-- **ChromaDB** — one persistent store, three separate collections (`search_cache`,
-  `resume_sections`, `job_postings`). Sharing the embedding space enables Stage 2
-  ↔ Stage 3 reuse.
-- **Confidence scoring** — `backend/app/core/confidence.py`. The `Verified /
-  Reworded / Gap` classifier from the real-estate RAG project. **The same
-  `match_keyword_to_bullet` function is used by both Stage 2 and Stage 3.**
-- **Resume graph** — `backend/app/core/resume_graph.py`. Graph-based structured
-  resume memory for token-efficient per-posting matching.
+### Shared Infrastructure
+
+- **LLM Router** — Multi-provider inference with automatic fallback (NVIDIA NIM → OpenRouter → Ollama → LM Studio). Rate-limit-aware, prompt-caching enabled.
+- **Embedding Layer** — `nomic-embed-text` via Ollama, same config across all stages.
+- **ChromaDB** — Single persistent store, three collections (`search_cache`, `resume_sections`, `job_postings`).
+- **Confidence Scoring** — `Verified / Reworded / Gap` classifier shared between Stage 2 and Stage 3.
+- **Resume Graph** — Graph-based structured resume memory for token-efficient per-posting matching.
 
 ---
 
-## Project layout
+## Quick Start
 
-```
-wayfarer/
-├── backend/                         # FastAPI service
-│   ├── app/
-│   │   ├── main.py                  # FastAPI entry, health, lifespan
-│   │   ├── config.py                # Pydantic Settings (.env-driven)
-│   │   ├── llm_router.py            # Multi-provider inference router
-│   │   ├── vector_store.py          # Multi-collection ChromaDB wrapper
-│   │   ├── models/
-│   │   │   ├── schemas.py           # Pydantic request/response models
-│   │   │   └── job_boards.py        # Board registry models + connector
-│   │   ├── core/
-│   │   │   ├── confidence.py        # Tier classifier + match_keyword_to_bullet
-│   │   │   └── resume_graph.py      # Graph-based structured resume memory
-│   │   ├── services/
-│   │   │   ├── search_api.py        # Tavily + Brave clients
-│   │   │   ├── web_fetch.py         # Crawl4AI concurrency-capped fetcher
-│   │   │   ├── search_service.py    # Stage 1 orchestrator
-│   │   │   ├── resume_parser.py     # PDF/DOCX parsing + ATS simulation
-│   │   │   ├── ats_checker.py       # Stage 2 orchestrator
-│   │   │   ├── resume_saver.py      # Save with/without overwrite
-│   │   │   ├── resume_store.py      # Upload persistence
-│   │   │   ├── job_matcher.py       # Stage 3 orchestrator + Fresher Mode
-│   │   │   └── legitimacy.py        # Ghost / no-sponsorship checks
-│   │   └── utils/
-│   │       └── cache.py             # Content-hash memoization
-│   ├── tests/                       # 48 tests (36 unit + 12 E2E)
-│   ├── requirements.txt
-│   ├── pytest.ini
-│   └── Dockerfile
-├── frontend/                        # React + Vite + TypeScript + Tailwind
-│   ├── src/
-│   │   ├── App.tsx                  # Tabbed UI shell (Search/Resume/Jobs/Settings)
-│   │   ├── pages/
-│   │   │   ├── Search.tsx           # Stage 1 UI
-│   │   │   ├── ResumeCheck.tsx      # Stage 2 UI
-│   │   │   ├── JobMatch.tsx         # Stage 3 UI + Fresher Mode toggle
-│   │   │   └── Settings.tsx         # API keys + resume upload
-│   │   ├── components/ui/           # Button, Card primitives
-│   │   ├── stores/settings.ts       # localStorage-backed API key store
-│   │   └── lib/{api.ts, types.ts, utils.ts}
-│   ├── Dockerfile + nginx.conf
-│   └── package.json
-├── config/
-│   ├── settings.yaml                # Main config (informational)
-│   └── job_boards.yaml              # Stage 3 board registry
-├── docker-compose.yml               # 5-service stack
-├── setup.sh                         # One-command setup
-├── .env.example                     # Copy to .env, fill in keys
-└── README.md
+### One-Command Setup
+
+```bash
+git clone https://github.com/anubhavsanket/wayfarer.git
+cd wayfarer
+bash setup.sh
 ```
 
----
-
-## Quick start (Docker Compose)
-
-### Prerequisites
-- [Docker](https://docs.docker.com/get-docker/) + Docker Compose (v2+)
-- An NVIDIA GPU is optional but recommended (router falls back to API inference without one)
-
-### 1. Clone and configure
+Or manually:
 
 ```bash
 git clone https://github.com/anubhavsanket/wayfarer.git
 cd wayfarer
 cp .env.example .env
-# edit .env and fill in at least ONE of:
-#   NVIDIA_NIM_API_KEY / OPENROUTER_API_KEY
-#   TAVILY_API_KEY (for Stage 1 search)
+docker compose up --build
 ```
 
-### 2. Bring up the stack
+### First-Time Setup
+
+1. **Pull models** (first time only):
+```bash
+docker compose exec ollama ollama pull qwen2.5:1.5b
+docker compose exec ollama ollama pull qwen3:1.7b
+docker compose exec ollama ollama pull nomic-embed-text
+```
+
+2. **Open the app**: http://localhost:3000
+
+3. **Go to Settings** → upload your resume in the **Primary Resume** card.
+
+4. **Start using**:
+   - **Resume Check** → paste a JD → check against your primary resume
+   - **Job Match** → click Find Matches → use Filters to narrow results
+   - **Search** → general web search with citations
+
+### Local Development (No Docker)
+
+```bash
+# Backend
+cd backend
+python -m venv .venv
+source .venv/Scripts/activate   # Windows: .venv\Scripts\activate
+pip install -r requirements.txt
+uvicorn backend.app.main:app --reload --host 0.0.0.0 --port 8000
+
+# Frontend (separate terminal)
+cd frontend
+npm install
+npm run dev
+```
+
+---
+
+## Configuration
+
+Configuration is layered:
+
+1. **`.env`** — runtime overrides (API keys, hostnames). Highest priority.
+2. **Settings tab** in the frontend — stores keys in localStorage, sent as request headers.
+3. **`config/job_boards.yaml`** — Stage 3 board registry (add a board = config change).
+
+### Supported LLM Providers
+
+| Provider | `.env` setting | API key needed? | Notes |
+|---|---|---|---|
+| NVIDIA NIM | `LLM_PROVIDER=nvidia` | `NVIDIA_NIM_API_KEY` | Free tier, fast |
+| OpenRouter | `LLM_PROVIDER=openrouter` | `OPENROUTER_API_KEY` | Free tier, wide model selection |
+| Ollama | `LLM_PROVIDER=ollama` | No | Local, pull models first |
+| LM Studio | `LLM_PROVIDER=lmstudio` | No | Set `LMSTUDIO_ENDPOINT` + `LMSTUDIO_MODEL` |
+| Custom | `LLM_PROVIDER=custom` | `CUSTOM_LLM_API_KEY` | Any OpenAI-compatible endpoint |
+
+### Model Selection
+
+Two models are used for different task types, benchmarked across 21 rewrite cases and 20 classification cases:
+
+| Tier | Model | Use cases | Why |
+|---|---|---|---|
+| **Simple** | qwen2.5:1.5b | Keyword extraction, classification | Fast (1.4s), token-efficient (30 tok), non-thinking |
+| **Complex** | qwen3:1.7b | Bullet rewriting, synthesis | High quality (97% accuracy), thinking model |
+
+Total VRAM: 2.76GB (1.2GB headroom on 4GB GTX 1650).
+
+### User Preferences
+
+| Setting | `.env` key | Default | Description |
+|---|---|---|---|
+| Visa sponsorship | `NEEDS_VISA_SPONSORSHIP` | `false` | Flag no-sponsorship postings as blockers |
+| Prompt caching | `ENABLE_PROMPT_CACHING` | `true` | Enable prompt caching for repeated calls |
+| Model override | `OLLAMA_MODEL` | `qwen2.5:1.5b` | Override the default Ollama model |
+
+---
+
+## API Reference
+
+### `GET /health`
+```json
+{"status":"ok","dependencies":[{"name":"chromadb","status":"up"},...]}
+```
+
+### `POST /api/v1/search` — Stage 1
+```bash
+curl -X POST http://localhost:8000/api/v1/search \
+  -H 'Content-Type: application/json' \
+  -d '{"query": "best practices for RAG?", "max_sources": 3}'
+```
+
+### `POST /api/v1/resume/check` — Stage 2
+```bash
+# Check primary resume (no file upload needed)
+curl -X POST http://localhost:8000/api/v1/resume/check \
+  -F "jd_text=Looking for an ML engineer with Python, PyTorch, and AWS."
+
+# Check a specific resume file
+curl -X POST http://localhost:8000/api/v1/resume/check \
+  -F "resume_file=@my_resume.pdf" \
+  -F "jd_text=Looking for an ML engineer with Python, PyTorch, and AWS."
+```
+
+### `POST /api/v1/resume/save` — Stage 2
+Three modes: `new_file` (default), `overwrite` (requires `confirm_overwrite: true`), `set_as_primary`.
+
+### `POST /api/v1/resume/primary` — Primary Resume
+```bash
+# Upload and set as primary
+curl -X POST http://localhost:8000/api/v1/resume/primary \
+  -F "resume_file=@my_resume.pdf"
+
+# Get current primary
+curl http://localhost:8000/api/v1/resume/primary
+```
+
+### `GET /api/v1/jobs/match` — Stage 3
+| Param | Type | Default | Notes |
+|---|---|---|---|
+| `resume_id` | string | optional | Omit to use primary resume |
+| `limit` | int | 20 | Max results |
+| `location_mode` | enum | `specific_city` | `specific_city` / `remote_only` / `hybrid` / `open_to_relocation` |
+| `cities` | csv | `""` | Comma-separated cities |
+| `remote_ok` | bool | false | Include remote postings |
+| `fresher_only` | bool | false | Filter to fresher/junior roles |
+| `max_age_days` | int | 30 | Max age of postings in days |
+| `min_score` | float | 0.0 | Minimum match score (0-1) |
+| `sources` | csv | `""` | Comma-separated source names |
+| `test` | bool | false | Return sample data |
+
+### `GET/POST /api/v1/config/model` — Model Configuration
+```bash
+curl http://localhost:8000/api/v1/config/model
+curl -X POST http://localhost:8000/api/v1/config/model \
+  -H "Content-Type: application/json" \
+  -d '{"ollama_model": "qwen3:1.7b"}'
+```
+
+---
+
+## Job Board Registry
+
+Every job source is defined in **`config/job_boards.yaml`**. Adding a new board is a config change, not a code change.
+
+### Active Sources (with descriptions)
+
+| Source | Auth | Coverage |
+|---|---|---|
+| RemoteOK | None | Remote tech |
+| Remotive | None | Remote tech/design |
+| Jobicy | None | Remote jobs |
+| Arbeitnow | None | Global |
+| Himalayas | None | Remote jobs |
+
+### Title-Only Sources
+
+| Source | Auth | Coverage |
+|---|---|---|
+| Bluedoor | API key | US-focused |
+| LinkedIn Guest | None | Global |
+
+### Configurable Sources (target-list based)
+
+| Source | Auth | How to enable |
+|---|---|---|
+| Adzuna | API key | Set `ADZUNA_API_KEY` in `.env`, set `enabled: true` |
+| Greenhouse | Board tokens | Set `GREENHOUSE_BOARD_TOKENS` in `.env`, set `enabled: true` |
+| Lever | Company slugs | Set `LEVER_POSTING_URLS` in `.env`, set `enabled: true` |
+| Workday | Company paths | Set `WORKDAY_URLS` in `.env`, set `enabled: true` |
+| Ashby | Org slug | Set `ASHBY_ORG` in `.env`, set `enabled: true` (experimental) |
+
+---
+
+## Token & Cost Optimization
+
+### Structured Resume Memory (Graph-Based)
+Resume is parsed once into an entity graph (skills, roles, projects, metrics). Per-posting matching pulls only the relevant subgraph instead of re-sending the full resume text.
+
+### Embedding-First Filtering
+Three-stage filter: (1) dedup + stale-drop (zero-token), (2) embedding similarity on top-50, (3) LLM keyword overlap on top-15 only.
+
+### Prompt Caching
+Enabled by default (`ENABLE_PROMPT_CACHING=true`). Passes cache-control headers to supported providers.
+
+### Response Memoization
+Resume check results cached by `hash(resume_bytes + jd_text)` with 72h TTL. Re-running the same check is instant.
+
+### Model Right-Sizing
+Different models for different tasks: qwen2.5:1.5b for classification (fast, token-efficient), qwen3:1.7b for generation (high quality). Evaluated with 21 rewrite cases and 20 classification cases.
+
+### JD Boilerplate Stripping
+EEO statements, benefits, about-us sections stripped before keyword extraction and embedding.
+
+---
+
+## Testing
+
+```bash
+# Unit tests
+cd backend
+python -m pytest tests/test_stage2.py tests/test_stage3.py -v
+
+# E2E tests (requires Docker services running)
+python -m pytest tests/test_docker_e2e.py -v
+
+# Model evaluation
+python eval_rewrite.py    # Generation benchmark (21 cases)
+python eval_classify.py   # Classification benchmark (20 cases)
+python eval_stability.py  # Determinism check
+```
+
+**Test status: 37 unit tests passing.**
+
+---
+
+## Deployment
+
+### Docker Compose
 
 ```bash
 docker compose up --build
 ```
-
-This starts five services:
 
 | Service | Port | Purpose |
 |---|---|---|
@@ -216,250 +315,74 @@ This starts five services:
 | `redis` | 6379 | Background job queue |
 | `frontend` | 3000 | React UI served by nginx |
 
-### 3. Pull models (first time only)
+### GPU Support
 
-```bash
-# Embedding model (required for all stages)
-docker compose exec ollama ollama pull nomic-embed-text
-
-# Chat model (only if using Ollama for inference)
-docker compose exec ollama ollama pull llama3.2:3b
-
-# Fresher Mode classifier (optional, only needed for experience-level filtering)
-docker compose exec ollama ollama pull qwen3:0.6b
-```
-
-### 4. Verify
-
-```bash
-curl http://localhost:8000/health
-# → 200 OK with per-dependency status
-```
-
-### 5. Use it
-
-1. Open **http://localhost:3000**
-2. Go to **Settings** tab — enter your API keys and upload your main resume
-3. Go to **Search** tab — ask any question
-4. Go to **Resume Check** tab — paste a JD to get ATS analysis (resume is already loaded)
-5. Go to **Job Match** tab — see live postings ranked by fit (uses your resume automatically)
-
-The resume you upload in Settings is used across all stages — no need to re-upload.
-
-- **API docs:** http://localhost:8000/docs — interactive Swagger UI
+The `ollama` service includes optional NVIDIA GPU passthrough. On machines without a GPU, remove the `deploy` block from `docker-compose.yml` — the LLM router falls back to API inference automatically.
 
 ---
 
-## Local development (no Docker)
+## Differentiators
 
-### Prerequisites
-- Python 3.11 or 3.12 (3.14 doesn't build the pinned dependencies)
-- Node.js 20+ (only for frontend work)
-- Ollama installed locally (or Docker for ChromaDB/Ollama)
-
-### 1. Create a venv and install backend deps
-
-```bash
-cd backend
-python3.11 -m venv .venv
-source .venv/bin/activate  # Linux/Mac
-# or .venv\Scripts\activate     # Windows
-pip install -r requirements.txt
-```
-
-### 2. Pull models
-
-```bash
-ollama pull nomic-embed-text
-# For local LLM inference:
-ollama pull llama3.2:3b
-```
-
-### 3. Run the API
-
-From the project root:
-```bash
-uvicorn backend.app.main:app --reload --host 0.0.0.0 --port 8000
-```
-
-ChromaDB falls back to a persistent local store at `./chroma_db/` automatically.
-
-### 4. Run the frontend
-
-```bash
-cd frontend
-npm install
-npm run dev  # → http://localhost:3000 (proxies /api to :8000)
-```
-
----
-
-## Configuration
-
-Configuration is layered:
-1. **`.env`** — runtime overrides (API keys, hostnames). Highest priority.
-2. **Settings tab** in the frontend — stores keys in localStorage, sends as
-   request headers. No keys in git.
-3. **`config/job_boards.yaml`** — Stage 3 board registry (add a board = config change).
-
-### Supported LLM providers
-
-| Provider | `.env` setting | API key needed? | Notes |
+| Dimension | Wayfarer | `ai-job-search` (28.6k★) | `career-ops` (61.9k★) |
 |---|---|---|---|
-| `nvidia` | `LLM_PROVIDER=nvidia` | `NVIDIA_NIM_API_KEY` | Free tier, fast |
-| `openrouter` | `LLM_PROVIDER=openrouter` | `OPENROUTER_API_KEY` | Free tier, wide model selection |
-| `ollama` | `LLM_PROVIDER=ollama` | No | Local, pull model first |
-| `lmstudio` | `LLM_PROVIDER=lmstudio` | No | Set `LMSTUDIO_ENDPOINT` + `LMSTUDIO_MODEL` |
-| `custom` | `LLM_PROVIDER=custom` | `CUSTOM_LLM_API_KEY` | Any OpenAI-compatible endpoint |
-
-The router always falls back through the provider list if the primary fails.
-
----
-
-## API reference
-
-### `GET /health`
-
-```json
-{"status":"ok","dependencies":[{"name":"chromadb","status":"up"},...]}
-```
-
-### `POST /api/v1/search` — Stage 1
-
-```bash
-curl -X POST http://localhost:8000/api/v1/search \
-  -H 'Content-Type: application/json' \
-  -d '{"query": "best practices for RAG?", "max_sources": 3}'
-```
-
-```json
-{
-  "answer": "Based on the provided sources...",
-  "citations": [{"id":1, "url":"...", "title":"...", "snippet":"..."}],
-  "sub_queries_used": ["best practices for RAG"],
-  "cached": false
-}
-```
-
-### `POST /api/v1/resume/check` — Stage 2
-
-```bash
-curl -X POST http://localhost:8000/api/v1/resume/check \
-  -F "resume_file=@my_resume.pdf" \
-  -F "jd_text=Looking for an ML engineer with Python, PyTorch, and AWS."
-```
-
-```json
-{
-  "resume_id": "abc123",
-  "ats_score": 0.85,
-  "structural_issues": [{"location": "table on page 1", "issue": "..."}],
-  "keyword_gaps": [
-    {"keyword": "pytorch", "tier": "reworded", "confidence": 0.84, "rationale": "..."}
-  ]
-}
-```
-
-### `POST /api/v1/resume/save` — Stage 2
-
-Default mode is non-destructive (writes a new file). Overwrite requires `confirm_overwrite: true`.
-
-### `GET /api/v1/jobs/match` — Stage 3
-
-| Param | Type | Default | Notes |
-|---|---|---|---|
-| `resume_id` | string | required | from `/resume/check` response |
-| `limit` | int | 20 | max results |
-| `location_mode` | enum | `specific_city` | `specific_city` / `remote_only` / `hybrid` / `open_to_relocation` |
-| `cities` | csv | `""` | comma-separated cities |
-| `remote_ok` | bool | false | include remote postings |
-| `fresher_only` | bool | false | filter to fresher/junior roles only |
-| `test` | bool | false | return sample data |
-
-```bash
-curl "http://localhost:8000/api/v1/jobs/match?resume_id=abc123&fresher_only=true&limit=10"
-```
-
-### `POST /api/v1/jobs/refresh` — Stage 3 background
-
-Re-fetches from all enabled boards and stores in ChromaDB.
+| Core engine | Owned RAG pipeline — embeddings, vector store, hybrid scoring | Claude Code slash commands + prompt orchestration | Any AI coding CLI + markdown state |
+| Deployment | Docker Compose, one command | CLI, requires Claude Code + LaTeX | CLI, requires AI coding CLI |
+| Resume handling | Redlines existing resume with tracked suggestions | Generates fresh CV per job (LaTeX) | Generates fresh ATS-optimized PDF |
+| Market | India-first (Bengaluru, Naukri/LinkedIn India) | Denmark-first | Global, AI/tech-first |
+| Inference | Multi-provider router with rate-limit fallback | Assumes paid Claude subscription | CLI-agnostic |
+| Transparency | Confidence-tiered: Verified / Reworded / Gap | Keyword-honesty rule (binary) | 6-block evaluation + human-in-the-loop |
+| ATS check | Structural diff + embedding similarity | PDF text layer + keyword coverage | Keyword-injected PDF generation |
+| Posting trust | Ghost/scam detection + sponsorship blocker | Not addressed | Ghost-job detection + sponsorship blocker |
 
 ---
 
-## The job board registry
+## Key Files
 
-Every job source is defined in **`config/job_boards.yaml`**. Adding a new board
-is a config change, not a code change.
-
-```yaml
-- name: bluedoor
-  enabled: true
-  type: rest_api
-  base_url: "https://api.bluedoor.sh/job-postings/v1/jobs/search"
-  auth: api_key
-  api_key_env: "BLUEDOOR_API_KEY"
-  rate_limit_per_min: 100
-  field_mapping:
-    title: "$.title"
-    company: "$.org_name"
-    location: "$.city"
-    url: "$.apply_url"
-  pagination:
-    type: "none"
-    param: ""
-    max_pages: 1
 ```
+backend/
+  app/
+    main.py              — FastAPI routes (all endpoints)
+    config.py            — Settings (model tiers, benchmarks documented)
+    llm_router.py        — Multi-provider LLM with fallback + prompt caching
+    vector_store.py      — ChromaDB client
+    core/
+      confidence.py      — Verified/Reworded/Gap classifier (shared Stage 2/3)
+      resume_graph.py    — Graph-based resume memory for token-efficient matching
+    models/
+      schemas.py         — Pydantic models (all API contracts)
+      job_boards.py      — Config-driven job board connector
+    services/
+      resume_parser.py   — AnyDoc + fallback parsers + OCR
+      ats_checker.py     — ATS scoring + keyword extraction
+      resume_saver.py    — Save modes (new/overwrite/set_as_primary)
+      resume_store.py    — File storage + primary resume index
+      job_matcher.py     — Hybrid scoring + filters + liveness checks
+      legitimacy.py      — Ghost/scam detection + boilerplate stripping
+      search_service.py  — Query decomposition + synthesis
+      search_api.py      — Tavily/Brave search clients
+      web_fetch.py       — Crawl4AI page fetcher
+  tests/                 — 37 unit tests
+  eval_rewrite.py        — Generation benchmark (21 cases, 4 models)
+  eval_classify.py       — Classification benchmark (20 cases, 5 models)
+  eval_stability.py      — Determinism check
 
----
+frontend/
+  src/
+    pages/
+      Search.tsx          — Web search with citations
+      ResumeCheck.tsx     — ATS check + redline view + save
+      JobMatch.tsx        — Job matching with filters
+      Settings.tsx        — API keys + primary resume + model config
+    stores/settings.ts    — localStorage settings + auth headers
+    lib/api.ts            — API client
 
-## Testing
-
-```bash
-# Unit tests (needs Python 3.11 venv, no Docker required)
-cd backend
-source .venv/bin/activate  # or .venv\Scripts\activate on Windows
-python -m pytest tests/test_stage1.py tests/test_stage2.py tests/test_stage3.py -v
-
-# E2E tests (requires all Docker services running)
-python -m pytest tests/test_docker_e2e.py -v
+config/
+  job_boards.yaml         — 12 job sources (config-driven)
+  settings.yaml           — Reference config (informational)
 ```
-
-**Test suite: 48 tests** (9 Stage1 + 11 Stage2 + 16 Stage3 + 12 E2E Docker), all passing.
-
----
-
-## What's in v1.1
-
-| Feature | Status | Description |
-|---|---|---|
-| **Fresher Mode** | ✅ | Filter postings to entry-level/junior roles via qwen3:0.6b classification |
-| **Employment type** | ✅ | full_time/contract/freelance/part_time field on JobMatch |
-| **LinkedIn integration** | ✅ | HTML parsing of guest API (50+ Indian job postings) |
-| **Background refresh** | ✅ | `POST /api/v1/jobs/refresh` — dedup, normalize, stale-drop |
-| **Pipeline integrity** | ✅ | Dedup across sources, TTL cleanup, location normalization |
-| **Structured resume memory** | ✅ | Graph-based entity extraction for token-efficient matching |
-| **Settings dashboard** | ✅ | API keys stored in localStorage, not in git |
-| **LM Studio / custom** | ✅ | Any OpenAI-compatible endpoint works |
-| **Side-by-side redlines** | ✅ | Original vs. suggested view in Resume Check |
-| **One-command setup** | ✅ | `bash setup.sh` or curl link |
-
----
-
-## Known limitations
-
-- **`bluedoor.sh` descriptions** — the API doesn't return JD descriptions in search
-  results, so experience classification uses titles only (often "unclear").
-- **LinkedIn guest API** — returns HTML (parsed via regex), not structured JSON.
-  Keep volume low, personal-use only.
-- **VRAM ceiling** — keep embeddings + local LLM under 4 GB total. Heavy inference
-  is routed to APIs via the LLM Router.
-- **No `.docx` track-changes export** — redline view is HTML-based for MVP.
-  OOXML track-changes is a v2 stretch goal.
-- **Python 3.11 / 3.12 only** — pinned dependencies don't build on 3.14.
 
 ---
 
 ## License
 
-Proprietary — built for the author's personal job search automation and as an AI
-engineering portfolio piece.
+Proprietary — built for personal job search automation and as an AI engineering portfolio piece.
