@@ -214,6 +214,12 @@ curl http://localhost:8000/api/v1/resume/primary
 | `sources` | csv | `""` | Comma-separated source names |
 | `test` | bool | false | Return sample data |
 
+### `POST /api/v1/jobs/refresh` — Stage 3 Background
+```bash
+curl -X POST http://localhost:8000/api/v1/jobs/refresh
+```
+Re-fetches from all enabled boards, deduplicates, normalizes, and stores in ChromaDB.
+
 ### `GET/POST /api/v1/config/model` — Model Configuration
 ```bash
 curl http://localhost:8000/api/v1/config/model
@@ -295,7 +301,7 @@ python eval_classify.py   # Classification benchmark (20 cases)
 python eval_stability.py  # Determinism check
 ```
 
-**Test status: 37 unit tests passing.**
+**Test status: 46 unit tests passing** (9 Stage 1 + 18 Stage 2 + 19 Stage 3).
 
 ---
 
@@ -361,7 +367,7 @@ backend/
       search_service.py  — Query decomposition + synthesis
       search_api.py      — Tavily/Brave search clients
       web_fetch.py       — Crawl4AI page fetcher
-  tests/                 — 37 unit tests
+  tests/                 — 46 unit tests
   eval_rewrite.py        — Generation benchmark (21 cases, 4 models)
   eval_classify.py       — Classification benchmark (20 cases, 5 models)
   eval_stability.py      — Determinism check
