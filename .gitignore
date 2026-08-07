@@ -21,6 +21,15 @@ chroma_db/
 cache/
 logs/
 
+# PRD / internal docs (not for public repo)
+*-prd.md
+*.prd.md
+
+# Test data / sample files
+test_resume.*
+*.pdf
+*.docx
+
 # Editor
 .vscode/
 .idea/
