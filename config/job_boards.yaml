@@ -165,3 +165,92 @@ job_boards:
     pagination:
       type: "start_offset"
       param: "start"
+
+  # ── Board-specific sources (target-list based) ────────────────────
+  # These require knowing the company's board identifier.
+  # Add your target companies below — each is a config change, not code.
+
+  - name: greenhouse
+    enabled: false  # Enable with GREENHOUSE_BOARD_TOKENS env var (comma-separated)
+    type: rest_api
+    base_url: "https://boards-api.greenhouse.io/v1/boards/{board_token}/jobs"
+    auth: none
+    rate_limit_per_min: 30
+    field_mapping:
+      id: "$.id"
+      title: "$.title"
+      company: "$.location.name"
+      location: "$.location.name"
+      url: "$.absolute_url"
+      description: "$.content"
+    pagination:
+      type: "none"
+      param: ""
+      max_pages: 1
+    # Note: requires GREENHOUSE_BOARD_TOKENS env var with comma-separated board tokens
+    # Example: GREENHOUSE_BOARD_TOKENS=anthropic,openai,google
+
+  - name: lever
+    enabled: false  # Enable with LEVER_POSTING_URLS env var (comma-separated)
+    type: rest_api
+    base_url: "https://api.lever.co/v0/postings/{company}"
+    auth: none
+    rate_limit_per_min: 30
+    field_mapping:
+      id: "$.id"
+      title: "$.text"
+      company: "$.categories.team"
+      location: "$.categories.location"
+      url: "$.hostedUrl"
+      description: "$.descriptionPlain"
+    pagination:
+      type: "none"
+      param: ""
+      max_pages: 1
+    # Note: requires LEVER_POSTING_URLS env var with comma-separated company slugs
+    # Example: LEVER_POSTING_URLS=anthropic,stripe,airbnb
+
+  - name: workday
+    enabled: false  # Enable with WORKDAY_URLS env var (comma-separated)
+    type: rest_api
+    base_url: "https://www.workday.com/wday/cxs/{company}/{site}/jobs"
+    auth: none
+    rate_limit_per_min: 20
+    extra_params:
+      limit: "20"
+      offset: "0"
+    field_mapping:
+      id: "$.bulletFields[0]"
+      title: "$.title"
+      company: "$.locationsText"
+      location: "$.locationsText"
+      url: "$.externalPath"
+      description: "$.jobDescriptionInfo.jobDescription"
+    pagination:
+      type: "offset"
+      param: "offset"
+      step: 20
+      max_pages: 3
+    # Note: requires WORKDAY_URLS env var with comma-separated company/site paths
+    # Example: WORKDAY_URLS=anthropic/jobs,google/jobs
+
+  - name: ashby
+    enabled: false  # Enable with ASHBY_ORG env var
+    type: rest_api
+    base_url: "https://jobs.ashbyhq.com/api/non-user-graphql?op=ApiJobBoardWithTeams"
+    auth: none
+    rate_limit_per_min: 20
+    extra_params:
+      operationName: "ApiJobBoardWithTeams"
+    field_mapping:
+      id: "$.id"
+      title: "$.title"
+      company: "$.teamName"
+      location: "$.locationName"
+      url: "$.id"
+    pagination:
+      type: "none"
+      param: ""
+      max_pages: 1
+    # Note: requires ASHBY_ORG env var with company slug
+    # Also requires custom query handling (GraphQL) — marked as experimental

@@ -7,6 +7,7 @@ import {
 
 import { api } from "@/lib/api";
 import { Card } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
 
 function locationBadge(match: string) {
   if (match === "exact") return "bg-green-100 text-green-800";
@@ -101,13 +102,33 @@ export default function JobMatchPage() {
   const [showUnclear, setShowUnclear] = useState(false);
   const [showFilters, setShowFilters] = useState(false);
 
-  // Filter state
+  // Editable filter state (changes as user adjusts sliders)
   const [maxAgeDays, setMaxAgeDays] = useState(30);
   const [minScore, setMinScore] = useState(0);
   const [cityFilter, setCityFilter] = useState("");
   const [locationMode, setLocationMode] = useState("specific_city");
   const [remoteOk, setRemoteOk] = useState(false);
   const [sourceFilter, setSourceFilter] = useState("");
+
+  // Committed filter state (only changes on "Apply" click — prevents unnecessary API calls)
+  const [appliedFilters, setAppliedFilters] = useState({
+    maxAgeDays: 30, minScore: 0, cityFilter: "", locationMode: "specific_city",
+    remoteOk: false, sourceFilter: "",
+  });
+  const [hasUnappliedChanges, setHasUnappliedChanges] = useState(false);
+
+  // Check if local filters differ from committed
+  const filtersChanged = maxAgeDays !== appliedFilters.maxAgeDays
+    || minScore !== appliedFilters.minScore
+    || cityFilter !== appliedFilters.cityFilter
+    || locationMode !== appliedFilters.locationMode
+    || remoteOk !== appliedFilters.remoteOk
+    || sourceFilter !== appliedFilters.sourceFilter;
+
+  const applyFilters = () => {
+    setAppliedFilters({ maxAgeDays, minScore, cityFilter, locationMode, remoteOk, sourceFilter });
+    setHasUnappliedChanges(false);
+  };
 
   // Available sources (matches job_boards.yaml enabled boards)
   const AVAILABLE_SOURCES = ["remoteok", "remotive", "jobicy", "arbeitnow", "himalayas", "bluedoor", "linkedin_guest", "adzuna"];
@@ -124,14 +145,14 @@ export default function JobMatchPage() {
   const hasResume = !!primary || !!resumeId;
 
   const { data, isLoading, error, refetch } = useQuery({
-    queryKey: ["jobs", resumeId, testMode, fresherOnly, primary?.resume_id, maxAgeDays, minScore, cityFilter, locationMode, remoteOk, sourceFilter],
+    queryKey: ["jobs", resumeId, testMode, fresherOnly, primary?.resume_id, appliedFilters],
     queryFn: () => api.jobsMatch(resumeId, 50, testMode, fresherOnly, {
-      maxAgeDays,
-      minScore: minScore / 100,
-      cities: cityFilter,
-      locationMode,
-      remoteOk,
-      sources: sourceFilter,
+      maxAgeDays: appliedFilters.maxAgeDays,
+      minScore: appliedFilters.minScore / 100,
+      cities: appliedFilters.cityFilter,
+      locationMode: appliedFilters.locationMode,
+      remoteOk: appliedFilters.remoteOk,
+      sources: appliedFilters.sourceFilter,
     }),
     enabled: hasResume,
   });
@@ -291,11 +312,22 @@ export default function JobMatchPage() {
                 setLocationMode("specific_city");
                 setRemoteOk(false);
                 setSourceFilter("");
+                setAppliedFilters({ maxAgeDays: 30, minScore: 0, cityFilter: "", locationMode: "specific_city", remoteOk: false, sourceFilter: "" });
               }}
               className="text-xs text-muted-foreground underline hover:text-foreground"
             >
               Reset all filters
             </button>
+
+            {/* Apply button */}
+            <Button
+              onClick={applyFilters}
+              disabled={!filtersChanged}
+              className="w-full"
+            >
+              Apply Filters
+              {filtersChanged && <span className="ml-2 rounded-full bg-primary-foreground px-2 py-0.5 text-[10px] font-bold text-primary">unsaved</span>}
+            </Button>
 
             {/* Job source filter */}
             <div className="space-y-1.5">
