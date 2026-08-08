@@ -192,14 +192,18 @@ class TestLegitimacy:
 class TestJobBoardRegistry:
     def test_loads_from_yaml(self):
         from backend.app.models.job_boards import load_registry
-        registry = load_registry("config/job_boards.yaml")
+        from pathlib import Path
+        yaml_path = Path(__file__).resolve().parent.parent.parent / "config" / "job_boards.yaml"
+        registry = load_registry(str(yaml_path))
         names = {b.name for b in registry.job_boards}
         assert "bluedoor" in names
         assert "linkedin_guest" in names
 
     def test_enabled_boards_only(self):
         from backend.app.models.job_boards import load_registry
-        registry = load_registry("config/job_boards.yaml")
+        from pathlib import Path
+        yaml_path = Path(__file__).resolve().parent.parent.parent / "config" / "job_boards.yaml"
+        registry = load_registry(str(yaml_path))
         enabled = [b for b in registry.job_boards if b.enabled]
         # All enabled boards must be known sources (no examples/templates)
         known = {"bluedoor", "linkedin_guest", "remoteok", "remotive", "jobicy", "arbeitnow", "himalayas"}
@@ -208,7 +212,9 @@ class TestJobBoardRegistry:
     def test_adding_board_is_config_change_not_code(self):
         """PRD §9.7: adding a new board = adding an entry to job_boards.yaml."""
         from backend.app.models.job_boards import load_registry
-        registry = load_registry("config/job_boards.yaml")
+        from pathlib import Path
+        yaml_path = Path(__file__).resolve().parent.parent.parent / "config" / "job_boards.yaml"
+        registry = load_registry(str(yaml_path))
         # Any enabled board with type=rest_api should have valid field_mapping
         for b in registry.job_boards:
             if b.enabled and b.type == "rest_api":
@@ -294,3 +300,267 @@ class TestPrimaryResumeMatch:
 
         resp = client.get(f"/api/v1/jobs/match?resume_id={resume_id}&limit=3&test=true")
         assert resp.status_code == 200
+
+
+# ---------------------------------------------------------------------------
+# Location matching — word-boundary accuracy (§9.6)
+# ---------------------------------------------------------------------------
+
+class TestCityMatches:
+    """Whole-word city matching — tighter than substring matching."""
+
+    def test_exact_city_in_location(self):
+        """Basic: city is the location itself."""
+        from backend.app.services.job_matcher import _city_matches, _loc_tokens
+        assert _city_matches(_loc_tokens("Bengaluru"), "Bengaluru")
+
+    def test_city_with_state_country(self):
+        """City is part of a full location string."""
+        from backend.app.services.job_matcher import _city_matches, _loc_tokens
+        assert _city_matches(_loc_tokens("Pune, Maharashtra, India"), "Pune")
+
+    def test_multi_word_city(self):
+        """Multi-word city: 'San Francisco' matches 'San Francisco, CA'."""
+        from backend.app.services.job_matcher import _city_matches, _loc_tokens
+        assert _city_matches(_loc_tokens("San Francisco, CA"), "San Francisco")
+
+    def test_substring_inside_word_no_match(self):
+        """'us' inside 'House' should NOT match — not a separate token."""
+        from backend.app.services.job_matcher import _city_matches, _loc_tokens
+        assert not _city_matches(_loc_tokens("House, TX"), "us")
+
+    def test_two_letter_token_in_location_matches(self):
+        """'ny' is a valid token in 'Anytown, NY' — legitimate abbreviation."""
+        from backend.app.services.job_matcher import _city_matches, _loc_tokens
+        assert _city_matches(_loc_tokens("Anytown, NY"), "ny")
+
+    def test_partial_city_not_match(self):
+        """'Yorkshire' should NOT match 'York, England' — token doesn't match."""
+        from backend.app.services.job_matcher import _city_matches, _loc_tokens
+        assert not _city_matches(_loc_tokens("York, England"), "Yorkshire")
+
+    def test_new_delhi_matches_delhi(self):
+        """'Delhi' matches 'New Delhi, India' (token subset)."""
+        from backend.app.services.job_matcher import _city_matches, _loc_tokens
+        assert _city_matches(_loc_tokens("New Delhi, India"), "Delhi")
+
+
+class TestLocationFilterWordBoundary:
+    """Word-boundary location matching in _apply_location_preference."""
+
+    def test_specific_city_not_substring(self):
+        """'us' should NOT match 'House, TX' — substring of a word, not a token."""
+        from backend.app.services.job_matcher import _apply_location_preference
+        from backend.app.models.schemas import LocationPreference, LocationMode, LocationMatch
+        m = _match(loc="House, TX")
+        kept = _apply_location_preference([m], LocationPreference(
+            mode=LocationMode.SPECIFIC_CITY, cities=["us"],
+        ))
+        assert len(kept) == 0  # 'us' is a substring inside 'house', not a separate token
+
+    def test_specific_city_exact_token_match(self):
+        """'delhi' matches 'New Delhi, India' — whole token is present."""
+        from backend.app.services.job_matcher import _apply_location_preference
+        from backend.app.models.schemas import LocationPreference, LocationMode, LocationMatch
+        m = _match(loc="New Delhi, India")
+        kept = _apply_location_preference([m], LocationPreference(
+            mode=LocationMode.SPECIFIC_CITY, cities=["delhi"],
+        ))
+        assert len(kept) == 1
+        assert kept[0].location_match == LocationMatch.EXACT
+
+    def test_remote_in_city_marked_remote_not_exact(self):
+        """A remote posting mentioning the city should be REMOTE, not EXACT."""
+        from backend.app.services.job_matcher import _apply_location_preference
+        from backend.app.models.schemas import LocationPreference, LocationMode, LocationMatch
+        m = _match(loc="Remote — Bengaluru")
+        kept = _apply_location_preference([m], LocationPreference(
+            mode=LocationMode.SPECIFIC_CITY, cities=["bengaluru"],
+        ))
+        assert len(kept) == 1
+        assert kept[0].location_match == LocationMatch.REMOTE
+
+    def test_open_to_relocation_remote_is_remote(self):
+        """Remote posting in open_to_relocation mode is REMOTE, not EXACT."""
+        from backend.app.services.job_matcher import _apply_location_preference
+        from backend.app.models.schemas import LocationPreference, LocationMode, LocationMatch
+        m = _match(loc="Remote (India)")
+        kept = _apply_location_preference([m], LocationPreference(
+            mode=LocationMode.OPEN_TO_RELOCATION, cities=["delhi"],
+        ))
+        assert len(kept) == 1
+        assert kept[0].location_match == LocationMatch.REMOTE
+
+
+# ---------------------------------------------------------------------------
+# Title-only posting scoring (LinkedIn guest, §9.6)
+# ---------------------------------------------------------------------------
+
+class TestTitleOverlapScore:
+    """Zero-token relevance scoring for postings without descriptions."""
+
+    def _bullet(self, text: str):
+        from backend.app.core.confidence import ResumeBullet
+        return ResumeBullet(id="1", section="skills", text=text)
+
+    def _make_posting(self, title: str, company: str = "Acme") -> "JobPosting":
+        import datetime
+        return JobPosting(
+            id=f"{title}:{company}", source="test", title=title,
+            company=company, url="https://example.com/apply",
+            description="", location="Remote",
+            fetched_at=datetime.datetime.now(datetime.timezone.utc),
+        )
+
+    def test_matching_skill(self):
+        """A posting with 'Python' in the title scores when resume mentions Python."""
+        from backend.app.services.job_matcher import _title_overlap_score
+        posting = self._make_posting("Python Developer", "Acme")
+        bullets = [self._bullet("Built ML systems with Python and FastAPI")]
+        score = _title_overlap_score(posting, bullets)
+        assert score > 0
+
+    def test_no_match(self):
+        """A posting with no overlap scores 0."""
+        from backend.app.services.job_matcher import _title_overlap_score
+        posting = self._make_posting("Mathematical Programmer", "XYZ")
+        bullets = [self._bullet("Built ML systems with Python and FastAPI")]
+        score = _title_overlap_score(posting, bullets)
+        assert score == 0.0
+
+    def test_empty_bullets(self):
+        from backend.app.services.job_matcher import _title_overlap_score
+        posting = self._make_posting("Python Dev", "Acme")
+        score = _title_overlap_score(posting, [])
+        assert score == 0.0
+
+
+class TestSelectSurvivors:
+    """Top-K survivor selection with title-only reservation."""
+
+    def _make_posting(self, name: str) -> "JobPosting":
+        import datetime
+        return JobPosting(
+            id=name, source="test", title=name, company="Co",
+            url=f"https://example.com/{name}", description="",
+            location="Remote",
+            fetched_at=datetime.datetime.now(datetime.timezone.utc),
+        )
+
+    def test_reservation_guarantees_title_entries(self):
+        """With 100 desc postings and 5 title postings, title gets reserved slots."""
+        from backend.app.services.job_matcher import _select_survivors
+        desc = [(self._make_posting(f"desc-{i}"), 0.9 - i * 0.01) for i in range(20)]
+        title = [(self._make_posting(f"title-{i}"), 0.5) for i in range(5)]
+        top_k = _select_survivors(desc, title, top_k=15)
+        title_in_top = [p for p, _ in top_k if p.id.startswith("title-")]
+        assert len(title_in_top) >= 2  # reserved = max(2, 15//5=3) → 3
+
+    def test_no_title_postings(self):
+        """No title postings → all slots go to description-based postings."""
+        from backend.app.services.job_matcher import _select_survivors
+        desc = [(self._make_posting(f"desc-{i}"), 0.9) for i in range(15)]
+        top_k = _select_survivors(desc, [], top_k=15)
+        assert len(top_k) == 15
+        assert all(p.id.startswith("desc-") for p, _ in top_k)
+
+    def test_all_title_postings_fill_budget(self):
+        """When there are few/no description postings, title fills up to budget."""
+        from backend.app.services.job_matcher import _select_survivors
+        desc = []
+        title = [(self._make_posting(f"title-{i}"), 0.5) for i in range(10)]
+        top_k = _select_survivors(desc, title, top_k=15)
+        assert len(top_k) == 10  # all 10 title postings fit within budget
+
+
+class TestLinkedinParsing:
+    """LinkedIn guest HTML parsing still extracts jobs correctly."""
+
+    # Minimal LinkedIn job-card HTML structure (2026 layout)
+    _SAMPLE_HTML = """<!DOCTYPE html>
+      <li>
+        <div class="base-card relative w-full hover:no-underline focus:no-underline
+         base-card--link
+         base-search-card base-search-card--link job-search-card">
+          <a class="base-card__full-link absolute top-0 right-0 bottom-0 left-0 p-0 z-[2]"
+             href="https://www.linkedin.com/jobs/view/python-dev-at-acme-123?position=1">
+          </a>
+          <div class="base-search-card__info">
+            <h3 class="base-search-card__title">
+              <span class="sr-only">
+        Python Developer
+      </span>
+            </h3>
+            <h4 class="base-search-card__subtitle">
+              <a class="hidden-nested-link" href="https://www.linkedin.com/company/acme">Acme Corp</a>
+            </h4>
+            <div class="base-search-card__metadata">
+              <span class="job-search-card__location">
+            Bengaluru, Karnataka
+              </span>
+            </div>
+          </div>
+        </div>
+      </li>
+      <li>
+        <div class="base-card relative w-full hover:no-underline focus:no-underline
+         base-card--link
+         base-search-card base-search-card--link job-search-card">
+          <a class="base-card__full-link absolute top-0 right-0 bottom-0 left-0 p-0 z-[2]"
+             href="https://www.linkedin.com/jobs/view/frontend-eng-at-xyz-456?position=2">
+          </a>
+          <div class="base-search-card__info">
+            <h3 class="base-search-card__title">
+              <span class="sr-only">
+        Frontend Engineer
+      </span>
+            </h3>
+            <h4 class="base-search-card__subtitle">
+              <a class="hidden-nested-link" href="https://www.linkedin.com/company/xyz">XYZ Inc</a>
+            </h4>
+            <div class="base-search-card__metadata">
+              <span class="job-search-card__location">
+            Remote
+              </span>
+            </div>
+          </div>
+        </div>
+      </li>
+    """
+
+    def test_parse_html_postings_extracts_all_fields(self):
+        from backend.app.models.job_boards import JobBoardEntry, JobBoardConnector
+        board = JobBoardEntry(
+            name="linkedin_guest",
+            type="rest_api",
+            base_url="https://www.linkedin.com/jobs-guest/jobs/api/seeMoreJobPostings/search",
+        )
+        postings = JobBoardConnector()._parse_html_postings(self._SAMPLE_HTML, board)
+        assert len(postings) == 2
+        assert all(p["title"] for p in postings)
+        assert all(p["apply_url"].startswith("https://www.linkedin.com/jobs/view/") for p in postings)
+        assert all(p["org_name"] != "" for p in postings)
+        assert all(p["description"] == "" for p in postings)  # LinkedIn cards lack JD body
+
+    def test_parsed_postings_normalise_to_job_posting(self):
+        """Parsed LinkedIn postings survive _normalise and produce valid JobPostings."""
+        from backend.app.models.job_boards import JobBoardEntry, JobBoardConnector
+        from backend.app.models.job_boards import FieldMapping
+        board = JobBoardEntry(
+            name="linkedin_guest",
+            type="rest_api",
+            base_url="https://www.linkedin.com/jobs-guest/jobs/api/seeMoreJobPostings/search",
+            field_mapping=FieldMapping(
+                title="$.title", company="$.org_name",
+                location="$.city", url="$.apply_url",
+            ),
+        )
+        connector = JobBoardConnector()
+        raw_postings = connector._parse_html_postings(self._SAMPLE_HTML, board)
+        normalised = [connector._normalise(board, p) for p in raw_postings]
+        normalised = [p for p in normalised if p is not None]
+        assert len(normalised) == 2
+        assert normalised[0].title == "Python Developer"
+        assert normalised[0].company == "Acme Corp"
+        assert normalised[0].location == "Bengaluru, Karnataka"
+        assert normalised[0].source == "linkedin_guest"

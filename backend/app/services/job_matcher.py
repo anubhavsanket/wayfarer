@@ -198,6 +198,44 @@ async def _compute_semantic_scores(
     return scored
 
 
+def _title_overlap_score(posting: JobPosting, bullets: list[Any]) -> float:
+    """Zero-token relevance score for postings without a description.
+
+    Boards that only expose title/company cards (LinkedIn guest API, some
+    ATS boards) ship no JD body, so they can't be embedded. This scores them
+    by the fraction of title/company tokens that also appear in the resume —
+    a cheap lexical proxy so they can be ranked by the top-K survivor cutoff
+    instead of getting a flat 0.0 and being dropped (§9.6).
+    """
+    # Require ≥2 chars to avoid single-letter false positives ('t' in 'fastapi',
+    # 'c' in 'python') that produce spurious substring matches against resume text.
+    tokens = set(re.findall(r"[a-z0-9+#.]{2,}", f"{posting.title} {posting.company}".lower()))
+    if not tokens:
+        return 0.0
+    resume_text = " ".join(b.text.lower() for b in bullets if b.text)
+    hits = sum(1 for t in tokens if t in resume_text)
+    return hits / len(tokens)
+
+
+def _select_survivors(
+    scored_desc: list[tuple[JobPosting, float]],
+    title_scored: list[tuple[JobPosting, float]],
+    top_k: int,
+) -> list[tuple[JobPosting, float]]:
+    """Top-K survivors with a guaranteed share for title-only postings.
+
+    Description-based postings get ``top_k - reserved`` slots; the rest are
+    reserved for title-only postings (LinkedIn guest cards, some ATS boards)
+    so they aren't starved out by description-rich boards. If there aren't
+    enough description postings, title-only postings fill the budget.
+    """
+    # Only reserve slots for title-only postings that actually scored > 0.
+    # Unconditionally injecting zero-relevance postings displaces genuine matches.
+    relevant_titles = [t for t in title_scored if t[1] > 0]
+    reserved = min(len(relevant_titles), max(2, top_k // 5))
+    return (scored_desc[: top_k - reserved] + title_scored)[:top_k]
+
+
 async def _extract_jd_keywords(jd_text: str) -> list[str]:
     """Extract keywords from a JD via LLM, with regex fallback."""
     from .ats_checker import _extract_jd_keywords as extract
@@ -337,8 +375,11 @@ async def _match_one(
     filter bullets to only those relevant to the JD's keywords —
     turns O(N × full_resume_tokens) into O(N × relevant_subgraph_tokens).
     """
-    # §12.1: Extract JD keywords first, then use graph to filter bullets
-    keywords = await _extract_jd_keywords(posting.description or "")
+    # §12.1: Extract JD keywords first, then use graph to filter bullets.
+    # Title-only postings (LinkedIn guest cards) have no description to mine
+    # — fall back to title + company so they're still matchable.
+    jd_text = posting.description or f"{posting.title} {posting.company}"
+    keywords = await _extract_jd_keywords(jd_text)
 
     if resume_graph and keywords:
         # Use graph subgraph to get only relevant bullet IDs
@@ -388,6 +429,28 @@ async def _match_one(
 # Location preference (FR3.6, FR3.7)
 # ---------------------------------------------------------------------------
 
+_LOC_TOKEN_RE = re.compile(r"[a-z][a-z]+")
+
+
+def _loc_tokens(loc: str | None) -> set[str]:
+    """Word tokens of a location string (lowercased, punctuation dropped)."""
+    return set(_LOC_TOKEN_RE.findall((loc or "").lower()))
+
+
+def _city_matches(loc_tokens: set[str], city: str) -> bool:
+    """Whole-word city match: every word of the city must appear in the location.
+
+    Substring matching is too loose — a short city like 'ny' or 'us' matches
+    the middle of unrelated words ('any', 'house'). Token matching requires
+    the full city phrase: 'San Francisco' matches 'San Francisco, CA' but
+    not 'Santa Clara'.
+    """
+    city_tokens = _LOC_TOKEN_RE.findall(city.lower())
+    if not city_tokens:
+        return False
+    return all(t in loc_tokens for t in city_tokens)
+
+
 def _apply_location_preference(
     matches: list[JobMatch],
     pref: LocationPreference,
@@ -404,18 +467,23 @@ def _apply_location_preference(
     cities = [c.lower().strip() for c in pref.cities if c]
     remote_ok = pref.remote_ok
 
-    def city_matches(p: JobMatch) -> bool:
+    def _city_in_tokens(loc_tokens: set[str]) -> bool:
         if not cities:
             return True  # no city constraint
-        loc = (p.location or "").lower()
-        return any(c in loc for c in cities)
+        return any(_city_matches(loc_tokens, c) for c in cities)
 
     kept: list[JobMatch] = []
     for m in matches:
-        # Check both location string and remote_type field
+        # Whole-word token matching, so 'remote' isn't confused with
+        # 'Remote, OR' and city names don't match inside unrelated words.
+        loc_tokens = _loc_tokens(m.location)
         is_remote = (
-            "remote" in (m.location or "").lower()
+            "remote" in loc_tokens
             or "remote" in (m.remote_type or "").lower()
+        )
+        is_hybrid = (
+            "hybrid" in loc_tokens
+            or "hybrid" in (m.remote_type or "").lower()
         )
 
         if mode == LocationMode.REMOTE_ONLY:
@@ -424,36 +492,44 @@ def _apply_location_preference(
             m.location_match = LocationMatch.REMOTE
 
         elif mode == LocationMode.HYBRID:
-            if not (is_remote or "hybrid" in (m.location or "").lower()):
+            if not (is_remote or is_hybrid):
                 continue
             m.location_match = LocationMatch.REMOTE
 
         elif mode == LocationMode.SPECIFIC_CITY:
             if not cities:
-                # No city constraint — accept all postings (mark as exact if
-                # remote_ok or not remote; otherwise mark as relocation required)
+                # No city constraint — accept all postings
                 if is_remote and remote_ok:
                     m.location_match = LocationMatch.REMOTE
                 elif is_remote:
                     m.location_match = LocationMatch.REMOTE
                 else:
                     m.location_match = LocationMatch.RELOCATION_REQUIRED
-            elif city_matches(m):
-                m.location_match = LocationMatch.EXACT
+            elif _city_in_tokens(loc_tokens):
+                # A remote posting is remote even when its location string
+                # happens to mention the city (e.g. 'Remote — Bengaluru').
+                m.location_match = (
+                    LocationMatch.REMOTE if is_remote else LocationMatch.EXACT
+                )
             elif is_remote and remote_ok:
                 m.location_match = LocationMatch.REMOTE
             else:
                 continue  # filtered out
 
         elif mode == LocationMode.OPEN_TO_RELOCATION:
-            # Accept every posting; mark EXACT when a preferred city matches,
-            # otherwise RELOCATION_REQUIRED so the user knows it implies moving.
-            loc = (m.location or "").lower()
-            m.location_match = (
-                LocationMatch.EXACT
-                if any(c in loc for c in cities)
-                else LocationMatch.RELOCATION_REQUIRED
-            )
+            # Accept every posting; mark REMOTE for remote, EXACT when a
+            # preferred city matches, otherwise RELOCATION_REQUIRED.
+            if is_remote:
+                m.location_match = LocationMatch.REMOTE
+            elif not cities:
+                # No city constraint — can't claim EXACT, so relocation.
+                m.location_match = LocationMatch.RELOCATION_REQUIRED
+            else:
+                m.location_match = (
+                    LocationMatch.EXACT
+                    if _city_in_tokens(loc_tokens)
+                    else LocationMatch.RELOCATION_REQUIRED
+                )
 
         kept.append(m)
 
@@ -550,19 +626,28 @@ async def match_jobs(
     MAX_EMBED_POSTINGS = 50
     resume_vec = await _embed_resume(parsed)
     if resume_vec is not None:
-        # Prioritise postings that have descriptions (they can actually be matched)
+        # Prioritise postings that have descriptions (they can actually be embedded)
         with_desc = [p for p in postings if p.description]
         without_desc = [p for p in postings if not p.description]
         to_embed = with_desc[:MAX_EMBED_POSTINGS]
-        no_score = without_desc + with_desc[MAX_EMBED_POSTINGS:]
         logger.info("Embedding %d of %d postings with descriptions (%d skipped, %d without desc)",
                      len(to_embed), len(with_desc), max(0, len(with_desc) - MAX_EMBED_POSTINGS), len(without_desc))
         scored = await _compute_semantic_scores(resume_vec, to_embed)
-        # Add remaining with 0 score
-        scored.extend((p, 0.0) for p in no_score)
+        # Remaining with-description postings are never embedded — score 0.
+        scored.extend((p, 0.0) for p in with_desc[MAX_EMBED_POSTINGS:])
         scored.sort(key=lambda t: t[1], reverse=True)
-        top_k = scored[:TOP_K_EMBEDDING_SURVIVORS]
-        logger.info("Top-K after semantic score: %d postings (of %d total)", len(top_k), len(scored))
+
+        # Title-only postings (LinkedIn guest cards, some ATS boards) have no
+        # description to embed, so a flat 0.0 lets description-rich boards
+        # starve them out of the top-K entirely (§9.6). Rank them with a
+        # zero-token title-overlap score and reserve a few survivor slots.
+        title_scored = sorted(
+            ((p, _title_overlap_score(p, parsed.bullets)) for p in without_desc),
+            key=lambda t: t[1], reverse=True,
+        )
+        top_k = _select_survivors(scored, title_scored, TOP_K_EMBEDDING_SURVIVORS)
+        logger.info("Top-K survivors: %d postings (%d embedded, %d title-only)",
+                     len(top_k), len(scored), len(top_k) - min(len(scored), TOP_K_EMBEDDING_SURVIVORS))
     else:
         # No embeddings available — use keyword-only scoring on all postings
         logger.info("Embeddings unavailable; using keyword-only scoring on all %d postings", len(postings))
