@@ -73,10 +73,11 @@ sleep 30
 echo -e "${YELLOW}Pulling embedding model (first time only)...${NC}"
 docker compose exec ollama ollama pull nomic-embed-text 2>/dev/null || true
 
-# Pull chat model (for Ollama mode)
+# Pull chat models (for Ollama mode) — match config.py LLM_MODELS defaults
 if grep -q "LLM_PROVIDER=ollama" .env; then
-    echo -e "${YELLOW}Pulling chat model for local inference...${NC}"
-    docker compose exec ollama ollama pull llama3.2:3b 2>/dev/null || true
+    echo -e "${YELLOW}Pulling chat models for local inference...${NC}"
+    docker compose exec ollama ollama pull qwen2.5:1.5b 2>/dev/null || true   # simple tier
+    docker compose exec ollama ollama pull qwen3:1.7b 2>/dev/null || true     # complex tier
 fi
 
 # Health check
