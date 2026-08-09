@@ -49,6 +49,8 @@ export default function ResumeCheckPage() {
 
   const handleCheck = () => {
     if (!jdText.trim()) return;
+    setResult(null); // Clear previous results before new check
+    setSaveMode(null);
     if (useVariant && file) {
       checkMutation.mutate({ file, jd: jdText.trim() });
     } else if (primary) {
