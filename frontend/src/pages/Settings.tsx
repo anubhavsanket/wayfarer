@@ -100,12 +100,11 @@ export default function SettingsPage() {
       <Card className="p-6">
         <div className="mb-2 flex items-center gap-2">
           <SettingsIcon className="h-5 w-5 text-blue" />
-          <h2 className="font-display text-lg font-bold">API Keys & Settings</h2>
+          <h2 className="font-display text-lg font-bold">Settings</h2>
         </div>
         <p className="text-sm text-muted-foreground">
-          Enter your API keys here. Keys are stored in your browser's localStorage
-          and sent as headers to the backend — they are never committed to git.
-          You can also use the <code className="rounded bg-beige-deep px-1 font-mono text-xs">.env</code> file for Docker deployments.
+          Manage your primary resume and view system configuration.
+          API keys are configured via the <code className="rounded bg-beige-deep px-1 font-mono text-xs">.env</code> file.
         </p>
       </Card>
 

@@ -45,7 +45,7 @@ export default function ResumeCheckPage() {
     },
   });
 
-  const canCheck = jdText.trim() && (primary || (useVariant && file));
+  const canCheck = jdText.trim() && ((primary && !useVariant) || (useVariant && file));
 
   const handleCheck = () => {
     if (!jdText.trim()) return;
@@ -58,25 +58,18 @@ export default function ResumeCheckPage() {
 
   // Save mutation
   const saveMutation = useMutation({
-    mutationFn: async (mode: SaveMode) => {
-      const res = await fetch("/api/v1/resume/save", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          resume_id: result?.resume_id,
-          accepted_suggestions: result?.keyword_gaps
-            ?.filter((g) => g.suggested_text)
-            .map((g) => ({
-              bullet_id: g.bullet_id ?? "",
-              suggested_text: g.suggested_text ?? "",
-            })) ?? [],
-          mode,
-          confirm_overwrite: mode === "overwrite",
-        }),
-      });
-      if (!res.ok) throw new Error(`Save failed (${res.status}): ${await res.text()}`);
-      return res.json();
-    },
+    mutationFn: (mode: SaveMode) =>
+      api.resumeSave({
+        resume_id: result?.resume_id ?? "",
+        accepted_suggestions: result?.keyword_gaps
+          ?.filter((g) => g.suggested_text)
+          .map((g) => ({
+            bullet_id: g.bullet_id ?? "",
+            suggested_text: g.suggested_text ?? "",
+          })) ?? [],
+        mode,
+        confirm_overwrite: mode === "overwrite",
+      }),
     onSuccess: () => setSaveMode(null),
   });
 

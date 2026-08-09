@@ -87,4 +87,15 @@ export const api = {
     if (opts.sources) params.set("sources", opts.sources);
     return request<JobMatchResponse>(`/api/v1/jobs/match?${params.toString()}`);
   },
+
+  // Resume save
+  resumeSave: (body: {
+    resume_id: string;
+    accepted_suggestions: { bullet_id: string; suggested_text: string }[];
+    mode: string;
+    confirm_overwrite: boolean;
+  }) => request<{ file_id: string; file_ref: string; mode_applied: string }>("/api/v1/resume/save", {
+    method: "POST",
+    body: JSON.stringify(body),
+  }),
 };

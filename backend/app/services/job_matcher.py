@@ -324,9 +324,17 @@ async def _classify_experience(jd_text: str) -> dict[str, Any]:
             if fallback["experience_level"] != "unclear":
                 return fallback
 
+        # Validate min_experience_years — LLM can emit non-numeric strings
+        min_years = result.get("min_experience_years") if result else None
+        if min_years is not None:
+            try:
+                min_years = float(min_years)
+            except (ValueError, TypeError):
+                min_years = None
+
         return {
             "experience_level": level,
-            "min_experience_years": result.get("min_experience_years") if result else None,
+            "min_experience_years": min_years,
             "confidence": result.get("confidence", 0.0) if result else 0.0,
         }
     except Exception as exc:

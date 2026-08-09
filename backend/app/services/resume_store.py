@@ -150,7 +150,7 @@ def original_file_path(resume_id: str) -> Path | None:
 
     # Look up the original filename from the index
     index = _load_index()
-    entry = index.get(resume_id)
+    entry = index.get("resumes", {}).get(resume_id)
     if entry and entry.get("filename"):
         candidate = rdir / entry["filename"]
         if candidate.exists():
