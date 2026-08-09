@@ -317,10 +317,14 @@ class JobBoardConnector:
         titles = re.findall(r'<span class="sr-only">\s*(.*?)\s*</span>', html, re.DOTALL)
         titles = [t.strip() for t in titles if t.strip()]
 
-        # Extract URLs from href attributes
-        urls = re.findall(
-            r'href="(https://[a-z.]*linkedin\.com/jobs/view/[^"]+)"', html
-        )
+        # Extract URLs from href attributes and decode HTML entities (&amp; → &)
+        import html as html_mod
+        urls = [
+            html_mod.unescape(u)
+            for u in re.findall(
+                r'href="(https://[a-z.]*linkedin\.com/jobs/view/[^"]+)"', html
+            )
+        ]
 
         # Extract company names (strip HTML tags)
         company_blocks = re.findall(

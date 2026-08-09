@@ -514,10 +514,10 @@ async def jobs_match(
                 min_score=min_score,
                 sources=source_list,
             ),
-            timeout=120,
+            timeout=300,
         )
     except asyncio.TimeoutError:
-        raise HTTPException(status_code=504, detail="Job matching timed out (120s limit). Try reducing the number of sources or disabling fresher mode.")
+        raise HTTPException(status_code=504, detail="Job matching timed out (300s limit). Try reducing the number of sources.")
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 

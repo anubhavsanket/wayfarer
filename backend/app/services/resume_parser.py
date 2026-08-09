@@ -343,6 +343,23 @@ def parse_resume(file_path: str | Path) -> ParsedResume:
     path = str(file_path)
     ext = Path(path).suffix.lower()
 
+    # --- Markdown files: read directly (no conversion needed) ---
+    if ext == ".md":
+        md_text = Path(path).read_text(encoding="utf-8", errors="replace")
+        if md_text.strip():
+            lines = _markdown_to_lines(md_text)
+            raw_text = "\n".join(lines)
+            sections, bullets = _parse_sections(lines)
+            contact = _extract_contact(lines)
+            return ParsedResume(
+                sections=sections,
+                bullets=bullets,
+                ats_visible_text=md_text,
+                structural_issues=[],
+                contact=contact,
+                raw_text=raw_text,
+            )
+
     # --- Try AnyDoc first (handles PDF, DOCX, PPTX, XLSX, RTF, etc.) ---
     md_text = _parse_with_anydoc(path)
     if md_text:
@@ -380,7 +397,7 @@ def parse_resume(file_path: str | Path) -> ParsedResume:
     else:
         raise ValueError(
             f"Unsupported resume format: {ext}. "
-            "Supported: PDF, DOCX, PPTX, XLSX, RTF, EPUB, CSV, ODT."
+            "Supported: PDF, DOCX, MD, PPTX, XLSX, RTF, EPUB, CSV, ODT."
         )
 
     # Detect structural issues (table loss in ATS extraction)
