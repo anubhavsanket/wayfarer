@@ -45,7 +45,7 @@ export default function ResumeCheckPage() {
     },
   });
 
-  const canCheck = jdText.trim() && (primary || useVariant || file);
+  const canCheck = jdText.trim() && (primary || (useVariant && file));
 
   const handleCheck = () => {
     if (!jdText.trim()) return;
@@ -58,8 +58,8 @@ export default function ResumeCheckPage() {
 
   // Save mutation
   const saveMutation = useMutation({
-    mutationFn: (mode: SaveMode) =>
-      fetch("/api/v1/resume/save", {
+    mutationFn: async (mode: SaveMode) => {
+      const res = await fetch("/api/v1/resume/save", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -73,7 +73,10 @@ export default function ResumeCheckPage() {
           mode,
           confirm_overwrite: mode === "overwrite",
         }),
-      }).then((r) => r.json()),
+      });
+      if (!res.ok) throw new Error(`Save failed (${res.status}): ${await res.text()}`);
+      return res.json();
+    },
     onSuccess: () => setSaveMode(null),
   });
 

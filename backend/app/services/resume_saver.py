@@ -93,26 +93,39 @@ def _apply_suggestions(
     parsed: ParsedResume,
     accepted: list[AcceptedSuggestion],
 ) -> ParsedResume:
-    """Return a copy of ``parsed`` with accepted bullet edits applied."""
+    """Return a copy of ``parsed`` with accepted bullet edits applied.
+
+    Builds a line→bullet_id mapping from the ORIGINAL sections, then
+    applies edits to both bullets and sections atomically. The previous
+    implementation mutated bullets first, then tried to match OLD section
+    lines against NEW bullet text — which never matched, so zero edits
+    were actually applied.
+    """
     edits = {s.bullet_id: s.suggested_text for s in accepted}
 
-    # Update bullets
+    # Build line→bullet_id mapping from ORIGINAL data (before any mutation)
+    line_to_bullet_id: dict[str, str] = {}
+    for b in parsed.bullets:
+        if b.id in edits:
+            line_to_bullet_id[b.text] = b.id
+
+    # Apply edits to bullets
     new_bullets = []
     for b in parsed.bullets:
         if b.id in edits and edits[b.id]:
-            b.text = edits[b.id]
-        new_bullets.append(b)
+            new_bullets.append(type(b)(id=b.id, section=b.section, text=edits[b.id]))
+        else:
+            new_bullets.append(type(b)(id=b.id, section=b.section, text=b.text))
     parsed.bullets = new_bullets
 
-    # Update the section lines that came from edited bullets
+    # Apply edits to sections using the original line→bullet_id mapping
     new_sections: dict[str, list[str]] = {}
     for section, lines in parsed.sections.items():
         new_lines = []
         for line in lines:
-            match = next((b for b in parsed.bullets if b.text == line or
-                          (b.id in edits and edits[b.id] == line)), None)
-            if match and match.id in edits:
-                new_lines.append(edits[match.id])
+            bullet_id = line_to_bullet_id.get(line)
+            if bullet_id and bullet_id in edits:
+                new_lines.append(edits[bullet_id])
             else:
                 new_lines.append(line)
         new_sections[section] = new_lines

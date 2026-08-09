@@ -74,24 +74,24 @@ export default function App() {
             ))}
           </TabsList>
 
-          {/* Each TabsContent mounts its child when activated → Reveal fires on switch */}
+          {/* forceMount keeps inactive tabs mounted (preserves state on tab switch) */}
           <div className="space-y-6">
-            <TabsContent value="search">
+            <TabsContent value="search" forceMount className="hidden data-[state=active]:block">
               <Reveal>
                 <SearchPage />
               </Reveal>
             </TabsContent>
-            <TabsContent value="resume">
+            <TabsContent value="resume" forceMount className="hidden data-[state=active]:block">
               <Reveal>
                 <ResumeCheckPage />
               </Reveal>
             </TabsContent>
-            <TabsContent value="jobs">
+            <TabsContent value="jobs" forceMount className="hidden data-[state=active]:block">
               <Reveal>
                 <JobMatchPage />
               </Reveal>
             </TabsContent>
-            <TabsContent value="settings">
+            <TabsContent value="settings" forceMount className="hidden data-[state=active]:block">
               <Reveal>
                 <SettingsPage />
               </Reveal>

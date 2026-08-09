@@ -168,10 +168,11 @@ async def check_resume(
     if cached is not None:
         logger.info("Cache hit for resume check (key=%s...)", cache_key[:12])
         gaps = [KeywordGap(**g) for g in cached["keyword_gaps"]]
+        structural = [StructuralIssue(**s) for s in cached.get("structural_issues", [])]
         return ResumeCheckResponse(
             resume_id=cached.get("resume_id", resume_id),
             ats_score=cached["ats_score"],
-            structural_issues=[],
+            structural_issues=structural,
             keyword_gaps=gaps,
         )
 
@@ -263,6 +264,7 @@ async def check_resume(
     resume_cache.set(cache_key, {
         "resume_id": resume_id,
         "ats_score": ats_score,
+        "structural_issues": [s.model_dump() for s in parsed.structural_issues],
         "keyword_gaps": [g.model_dump() for g in keyword_gaps],
     })
 

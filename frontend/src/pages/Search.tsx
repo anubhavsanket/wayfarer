@@ -10,6 +10,22 @@ import { Sticker } from "@/components/ui/badge";
 import { Reveal, Stagger } from "@/components/Reveal";
 import { LoadingIndicator } from "@/components/LoadingIndicator";
 
+/** Render Markdown bold (**text**) as <strong> without dangerouslySetInnerHTML. */
+function MarkdownText({ text }: { text: string }) {
+  const parts = text.split(/(\*\*[^*]+\*\*)/g);
+  return (
+    <>
+      {parts.map((part, i) =>
+        part.startsWith("**") && part.endsWith("**") ? (
+          <strong key={i}>{part.slice(2, -2)}</strong>
+        ) : (
+          <span key={i}>{part}</span>
+        ),
+      )}
+    </>
+  );
+}
+
 const EXAMPLE_QUERIES = [
   "Best practices for RAG pipelines?",
   "How to optimize Ollama inference speed?",
@@ -29,6 +45,7 @@ export default function SearchPage() {
   const handleSubmit = (q: string) => {
     if (q.trim()) {
       setQuery(q.trim());
+      setResult(null);
       mutation.mutate(q.trim());
     }
   };
@@ -104,7 +121,7 @@ export default function SearchPage() {
               <Sticker variant="blue">Answer</Sticker>
             </div>
             <p className="whitespace-pre-wrap text-sm leading-relaxed">
-              {result.answer}
+              <MarkdownText text={result.answer} />
             </p>
 
             {result.sub_queries_used.length > 0 && (

@@ -37,28 +37,32 @@ export const api = {
 
   // Stage 2 — Resume check
   // FR2.10 (§8.6): resumeFile is optional — omit to use primary resume
-  resumeCheck: (resumeFile: File | null, jdText: string) => {
+  resumeCheck: async (resumeFile: File | null, jdText: string): Promise<ResumeCheckResponse> => {
     const form = new FormData();
     if (resumeFile) form.append("resume_file", resumeFile);
     form.append("jd_text", jdText);
-    return fetch(`${API_BASE}/api/v1/resume/check`, {
+    const res = await fetch(`${API_BASE}/api/v1/resume/check`, {
       method: "POST",
       headers: buildAuthHeaders(),
       body: form,
-    }).then((r) => r.json() as Promise<ResumeCheckResponse>);
+    });
+    if (!res.ok) throw new Error(`Resume check failed (${res.status}): ${await res.text()}`);
+    return res.json();
   },
 
   // Primary resume management (§8.6 FR2.9)
   getResumePrimary: () => request<ResumePrimaryInfo>("/api/v1/resume/primary"),
 
-  setResumePrimary: (file: File) => {
+  setResumePrimary: async (file: File): Promise<ResumePrimaryInfo> => {
     const form = new FormData();
     form.append("resume_file", file);
-    return fetch(`${API_BASE}/api/v1/resume/primary`, {
+    const res = await fetch(`${API_BASE}/api/v1/resume/primary`, {
       method: "POST",
       headers: buildAuthHeaders(),
       body: form,
-    }).then((r) => r.json() as Promise<ResumePrimaryInfo>);
+    });
+    if (!res.ok) throw new Error(`Upload failed (${res.status}): ${await res.text()}`);
+    return res.json();
   },
 
   // Stage 3 — Job matching

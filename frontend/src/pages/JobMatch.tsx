@@ -251,7 +251,6 @@ function FilterPanel({
 /* ── Main Page ──────────────────────────────────────────────────────── */
 
 export default function JobMatchPage() {
-  const [testMode, setTestMode] = useState(true);
   const [fresherOnly, setFresherOnly] = useState(false);
   const [showUnclear, setShowUnclear] = useState(false);
   const [showFilters, setShowFilters] = useState(false);
@@ -303,17 +302,23 @@ export default function JobMatchPage() {
   const resumeFileName = primary?.filename || (localStorage.getItem("resume_filename") ?? "");
   const hasResume = !!primary || !!resumeId;
 
+  const [hasFetched, setHasFetched] = useState(false);
   const { data, isLoading, error, refetch } = useQuery({
-    queryKey: ["jobs", resumeId, testMode, fresherOnly, primary?.resume_id, appliedFilters],
-    queryFn: () => api.jobsMatch(resumeId, 50, testMode, fresherOnly, {
-      maxAgeDays: appliedFilters.maxAgeDays,
-      minScore: appliedFilters.minScore / 100,
-      cities: appliedFilters.cityFilter,
-      locationMode: appliedFilters.locationMode,
-      remoteOk: appliedFilters.remoteOk,
-      sources: appliedFilters.sourceFilter,
-    }),
-    enabled: hasResume,
+    queryKey: ["jobs", resumeId, fresherOnly, primary?.resume_id, appliedFilters],
+    queryFn: async () => {
+      const result = await api.jobsMatch(resumeId, 50, false, fresherOnly, {
+        maxAgeDays: appliedFilters.maxAgeDays,
+        minScore: appliedFilters.minScore / 100,
+        cities: appliedFilters.cityFilter,
+        locationMode: appliedFilters.locationMode,
+        remoteOk: appliedFilters.remoteOk,
+        sources: appliedFilters.sourceFilter,
+      });
+      setHasFetched(true);
+      return result;
+    },
+    // Disabled initially; auto-refetches when filters change after first fetch
+    enabled: hasFetched,
   });
 
   const totalResults = (data?.matches?.length ?? 0) + (data?.unclear_matches?.length ?? 0);
@@ -355,15 +360,6 @@ export default function JobMatchPage() {
 
         {/* Toggle row */}
         <div className="flex flex-wrap items-center gap-4 text-xs text-muted-foreground">
-          <label className="flex cursor-pointer items-center gap-2">
-            <input
-              type="checkbox"
-              checked={testMode}
-              onChange={(e) => setTestMode(e.target.checked)}
-              className="accent-blue"
-            />
-            Sample data
-          </label>
           <button
             onClick={() => setFresherOnly(!fresherOnly)}
             className="flex cursor-pointer items-center gap-1"
@@ -471,7 +467,7 @@ export default function JobMatchPage() {
                   <li key={i} className="flex items-center gap-3">
                     <span className="flex-1 text-sm font-medium">{g.skill}</span>
                     <ScoreBar
-                      value={(1 - g.missing_in_pct) * 100}
+                      value={g.missing_in_pct * 100}
                       decimals={0}
                       suffix="%"
                       className="w-48"

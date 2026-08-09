@@ -178,23 +178,31 @@ async def _compute_semantic_scores(
     resume_vec: list[float],
     postings: list[JobPosting],
 ) -> list[tuple[JobPosting, float]]:
-    """Cosine similarity of each posting's JD against the resume embedding."""
-    scored: list[tuple[JobPosting, float]] = []
-    for posting in postings:
-        if not posting.description:
-            scored.append((posting, 0.0))
-            continue
+    """Cosine similarity of each posting's JD against the resume embedding.
+
+    Embeds in concurrent batches of 5 to avoid sequential N×8s latency.
+    """
+    import asyncio
+    from .legitimacy import _strip_boilerplate
+
+    BATCH_SIZE = 5
+
+    async def _embed_one(p: JobPosting) -> float:
+        if not p.description:
+            return 0.0
         try:
-            # §12.6: Strip boilerplate + truncate to ~4000 chars (~1000 tokens)
-            # nomic-embed-text has 8192 token limit; 4000 chars is safer
-            from .legitimacy import _strip_boilerplate
-            desc = _strip_boilerplate(posting.description)[:4000]
+            desc = _strip_boilerplate(p.description)[:4000]
             jd_vec = await router.embed(desc)
-            score = cosine_similarity(resume_vec, jd_vec)
+            return cosine_similarity(resume_vec, jd_vec)
         except Exception as exc:
-            logger.warning("JD embed failed for %s: %s", posting.id, exc)
-            score = 0.0
-        scored.append((posting, score))
+            logger.warning("JD embed failed for %s: %s", p.id, exc)
+            return 0.0
+
+    scored: list[tuple[JobPosting, float]] = []
+    for i in range(0, len(postings), BATCH_SIZE):
+        batch = postings[i : i + BATCH_SIZE]
+        scores = await asyncio.gather(*[_embed_one(p) for p in batch])
+        scored.extend(zip(batch, scores))
     return scored
 
 
@@ -300,7 +308,7 @@ async def _classify_experience(jd_text: str) -> dict[str, Any]:
     try:
         resp = await router.chat(
             messages=[{"role": "user", "content": _CLASSIFICATION_PROMPT.format(text=jd_text[:1500])}],
-            model=settings.OLLAMA_MODEL,
+            tier="simple",
             max_tokens=150,
         )
         raw = resp["content"]
@@ -368,6 +376,7 @@ async def _match_one(
     resume_vec: list[float] | None,
     semantic_score: float,
     resume_graph: Any | None = None,
+    fresher_only: bool = False,
 ) -> JobMatch:
     """Compute the full hybrid match for a single posting (top-K only).
 
@@ -406,7 +415,11 @@ async def _match_one(
     flags = [f["kind"] for f in flag_dicts]
 
     # Fresher Mode: classify experience level (§15.1)
-    exp_class = await _classify_experience(posting.description or posting.title)
+    # Skip expensive LLM classification when not in fresher mode
+    if fresher_only:
+        exp_class = await _classify_experience(posting.description or posting.title)
+    else:
+        exp_class = {"experience_level": "unclear", "min_experience_years": None}
 
     return JobMatch(
         job_id=posting.id,
@@ -656,7 +669,8 @@ async def match_jobs(
     # 3. LLM keyword overlap on top-K only (cost control)
     matches: list[JobMatch] = []
     for posting, semantic in top_k:
-        m = await _match_one(posting, parsed, resume_vec, semantic, resume_graph=resume_graph)
+        m = await _match_one(posting, parsed, resume_vec, semantic,
+                             resume_graph=resume_graph, fresher_only=fresher_only)
         matches.append(m)
 
     # 4. Location filter + re-rank

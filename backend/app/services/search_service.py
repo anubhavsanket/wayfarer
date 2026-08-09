@@ -94,25 +94,28 @@ async def _fetch_and_cache(items: list[SearchResultItem]) -> dict[str, FetchResu
 
     cache_ids = [store._content_hash(u) for u in urls]
     cached = store.get(SEARCH_CACHE_COLLECTION, cache_ids)
+    # store.get returns only IDs that exist; zip with returned docs/metas
+    # to get correct alignment (not positional index into the request list)
+    id_to_url = {cid: u for cid, u in zip(cache_ids, urls)}
+    cached_ids = cached.get("ids") or []
     cached_docs = cached.get("documents") or []
     cached_metas = cached.get("metadatas") or []
-    cached_urls = {i: u for i, u in enumerate(urls)}
     cached_hits: dict[str, str] = {}  # url -> markdown
-    for i, doc in enumerate(cached_docs):
-        if doc:
-            url = cached_urls.get(i, "")
-            # Check TTL — skip stale entries
-            meta = cached_metas[i] if i < len(cached_metas) else {}
-            fetched_at = meta.get("fetched_at")
-            if fetched_at:
-                try:
-                    fetched_dt = datetime.fromisoformat(fetched_at.replace("Z", "+00:00"))
-                    if now - fetched_dt > cache_ttl:
-                        logger.debug("Cache hit expired for %s (fetched %s)", url[:60], fetched_at)
-                        continue
-                except (ValueError, TypeError):
-                    pass  # If we can't parse the timestamp, use the cache entry
-            cached_hits[url] = doc
+    for cid, doc, meta in zip(cached_ids, cached_docs, cached_metas):
+        if not doc:
+            continue
+        url = id_to_url.get(cid, "")
+        # Check TTL — skip stale entries
+        fetched_at = meta.get("fetched_at") if isinstance(meta, dict) else None
+        if fetched_at:
+            try:
+                fetched_dt = datetime.fromisoformat(fetched_at.replace("Z", "+00:00"))
+                if now - fetched_dt > cache_ttl:
+                    logger.debug("Cache hit expired for %s (fetched %s)", url[:60], fetched_at)
+                    continue
+            except (ValueError, TypeError):
+                pass  # If we can't parse the timestamp, use the cache entry
+        cached_hits[url] = doc
 
     to_fetch = [u for u in urls if u not in cached_hits]
     logger.info("Crawl4AI fetching %d/%d URLs (cache hit for %d)",
@@ -133,7 +136,7 @@ async def _fetch_and_cache(items: list[SearchResultItem]) -> dict[str, FetchResu
                 fresh_ids.append(store._content_hash(fr.url))
                 fresh_metas.append({
                     "url": fr.url,
-                    "title": fr.title[:200],
+                    "title": (fr.title or fr.url or "")[:200],
                     "fetched_at": datetime.now(timezone.utc).isoformat(),
                 })
         if fresh_docs:

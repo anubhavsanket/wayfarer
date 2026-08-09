@@ -454,13 +454,19 @@ async def jobs_match(
     )
     source_list = [s.strip() for s in sources.split(",") if s.strip()] if sources else []
     try:
-        return await match_jobs(
-            resume_id, location_pref, limit,
-            fresher_only=fresher_only,
-            max_age_days=max_age_days,
-            min_score=min_score,
-            sources=source_list,
+        import asyncio
+        return await asyncio.wait_for(
+            match_jobs(
+                resume_id, location_pref, limit,
+                fresher_only=fresher_only,
+                max_age_days=max_age_days,
+                min_score=min_score,
+                sources=source_list,
+            ),
+            timeout=120,
         )
+    except asyncio.TimeoutError:
+        raise HTTPException(status_code=504, detail="Job matching timed out (120s limit). Try reducing the number of sources or disabling fresher mode.")
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 

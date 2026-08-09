@@ -33,7 +33,10 @@ _INDEX_PATH = UPLOADS_ROOT / "index.json"
 
 
 def _resume_dir(resume_id: str) -> Path:
-    return UPLOADS_ROOT / resume_id
+    # Sanitize to prevent path traversal (M3)
+    import re
+    safe_id = re.sub(r"[^a-zA-Z0-9_-]", "", resume_id)
+    return UPLOADS_ROOT / safe_id
 
 
 # ---------------------------------------------------------------------------
@@ -136,12 +139,29 @@ def load_graph(resume_id: str) -> dict[str, Any] | None:
 
 
 def original_file_path(resume_id: str) -> Path | None:
-    """Path to the original uploaded resume file, or None."""
+    """Path to the original uploaded resume file, or None.
+
+    Uses the index to find the exact original filename instead of globbing,
+    which could pick up saved_*.docx files from prior saves.
+    """
     rdir = _resume_dir(resume_id)
     if not rdir.exists():
         return None
+
+    # Look up the original filename from the index
+    index = _load_index()
+    entry = index.get(resume_id)
+    if entry and entry.get("filename"):
+        candidate = rdir / entry["filename"]
+        if candidate.exists():
+            return candidate
+
+    # Fallback: glob for the first non-saved, non-parsed document file
     for candidate in rdir.glob("*"):
-        if candidate.suffix.lower() in (".pdf", ".docx", ".doc") and candidate.name != "parsed.json":
+        if (candidate.suffix.lower() in (".pdf", ".docx", ".doc")
+                and not candidate.name.startswith("saved_")
+                and candidate.name != "parsed.json"
+                and candidate.name != "graph.json"):
             return candidate
     return None
 

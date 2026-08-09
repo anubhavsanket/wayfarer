@@ -166,8 +166,10 @@ class JobBoardConnector:
         pag = board.pagination
         max_pages = pages or pag.max_pages
         value = pag.start_value
+        # Boards with no pagination only need one fetch
+        effective_pages = 1 if pag.type == "none" else max_pages
 
-        for page_num in range(max_pages):
+        for page_num in range(effective_pages):
             params: dict[str, Any] = dict(board.extra_params)
             if keywords:
                 params["q"] = keywords
