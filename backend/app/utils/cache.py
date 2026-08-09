@@ -18,6 +18,9 @@ rewritten when stale entries are pruned.
 from __future__ import annotations
 
 import hashlib
+
+# Bump this to invalidate all cached entries when scoring logic changes
+_CACHE_VERSION = "v2"
 import json
 import time
 from dataclasses import dataclass

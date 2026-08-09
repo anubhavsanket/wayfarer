@@ -138,7 +138,8 @@ def _compute_ats_score(
         )
         keyword_score = covered / len(keyword_gaps)
     else:
-        keyword_score = 1.0
+        # No keywords extracted = can't assess coverage, not a perfect match
+        keyword_score = 0.0
 
     return round(0.4 * structural_score + 0.6 * keyword_score, 3)
 
@@ -161,9 +162,9 @@ async def check_resume(
     :mod:`resume_store` so ``/resume/save`` can apply accepted suggestions.
     """
     # §12.4: Check cache first
-    from ..utils.cache import resume_cache
+    from ..utils.cache import resume_cache, _CACHE_VERSION
     resume_bytes = Path(resume_path).read_bytes()
-    cache_key = resume_cache.make_key(resume_bytes, jd_text.encode())
+    cache_key = resume_cache.make_key(_CACHE_VERSION.encode(), resume_bytes, jd_text.encode())
     cached = resume_cache.get(cache_key)
     if cached is not None:
         logger.info("Cache hit for resume check (key=%s...)", cache_key[:12])
@@ -260,7 +261,7 @@ async def check_resume(
     ats_score = _compute_ats_score(parsed, keyword_gaps)
 
     # §12.4: Cache the result
-    cache_key = resume_cache.make_key(resume_bytes, jd_text.encode())
+    cache_key = resume_cache.make_key(_CACHE_VERSION.encode(), resume_bytes, jd_text.encode())
     resume_cache.set(cache_key, {
         "resume_id": resume_id,
         "ats_score": ats_score,
