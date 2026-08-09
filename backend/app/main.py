@@ -12,6 +12,7 @@ import asyncio
 import logging
 from contextlib import asynccontextmanager
 from contextvars import ContextVar
+from dataclasses import dataclass
 
 import httpx
 import redis.asyncio as redis
@@ -41,8 +42,38 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# Context variable for per-request model override (set by middleware from headers)
-request_model_override: ContextVar[str | None] = ContextVar("model_override", default=None)
+
+# ---------------------------------------------------------------------------
+# Per-request config overrides (set by middleware from X-* headers)
+# ---------------------------------------------------------------------------
+
+@dataclass
+class RequestOverrides:
+    """Per-request config overrides extracted from X-* headers.
+
+    When set, these take precedence over .env defaults for the duration
+    of a single HTTP request. Allows the Settings UI to control the
+    backend's provider, keys, and endpoints without editing .env.
+    """
+    llm_provider: str | None = None
+    nvidia_api_key: str | None = None
+    nvidia_endpoint: str | None = None
+    openrouter_api_key: str | None = None
+    openrouter_endpoint: str | None = None
+    ollama_endpoint: str | None = None
+    ollama_model: str | None = None
+    lmstudio_endpoint: str | None = None
+    lmstudio_model: str | None = None
+    tavily_api_key: str | None = None
+    brave_api_key: str | None = None
+    bluedoor_api_key: str | None = None
+
+_request_overrides: ContextVar[RequestOverrides | None] = ContextVar("request_overrides", default=None)
+
+
+def get_overrides() -> RequestOverrides:
+    """Get the current request's config overrides (empty if no overrides)."""
+    return _request_overrides.get() or RequestOverrides()
 
 # Global clients
 redis_client: redis.Redis | None = None
@@ -177,15 +208,32 @@ app.add_middleware(
 
 
 @app.middleware("http")
-async def read_model_override(request, call_next):
-    """Read X-Ollama-Model header and set it in context for the LLM router."""
-    model = request.headers.get("X-Ollama-Model")
-    token = request_model_override.set(model or None)
+async def read_request_overrides(request, call_next):
+    """Read X-* headers and set per-request config overrides in context.
+
+    Allows the Settings UI to control the backend's provider, API keys,
+    and endpoints per-request without editing .env.
+    """
+    overrides = RequestOverrides(
+        llm_provider=request.headers.get("X-LLM-Provider") or None,
+        nvidia_api_key=request.headers.get("X-NVIDIA-API-Key") or None,
+        nvidia_endpoint=request.headers.get("X-NVIDIA-Endpoint") or None,
+        openrouter_api_key=request.headers.get("X-OpenRouter-API-Key") or None,
+        openrouter_endpoint=request.headers.get("X-OpenRouter-Endpoint") or None,
+        ollama_endpoint=request.headers.get("X-Ollama-Endpoint") or None,
+        ollama_model=request.headers.get("X-Ollama-Model") or None,
+        lmstudio_endpoint=request.headers.get("X-LMStudio-Endpoint") or None,
+        lmstudio_model=request.headers.get("X-LMStudio-Model") or None,
+        tavily_api_key=request.headers.get("X-Tavily-API-Key") or None,
+        brave_api_key=request.headers.get("X-Brave-API-Key") or None,
+        bluedoor_api_key=request.headers.get("X-Bluedoor-API-Key") or None,
+    )
+    token = _request_overrides.set(overrides)
     try:
         response = await call_next(request)
         return response
     finally:
-        request_model_override.reset(token)
+        _request_overrides.reset(token)
 
 
 # ---------------------------------------------------------------------------

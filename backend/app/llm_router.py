@@ -130,19 +130,19 @@ class LLMRouter:
 
         If ``model`` is provided, it overrides the tier-based model selection.
         """
+        from .main import get_overrides
+        ov = get_overrides()
+
+        # Per-request provider override from Settings UI
+        if not provider and ov.llm_provider:
+            provider = ov.llm_provider
+
         # If a specific provider is requested, only try it
         candidates = (provider,) if provider else self.providers
         last_error: Exception | None = None
 
-        # Check for per-request model override from headers (set by middleware)
-        try:
-            from .main import request_model_override
-            header_model = request_model_override.get()
-        except (ImportError, LookupError):
-            header_model = None
-
         for prov in candidates:
-            resolved_model = model or header_model or self._model_for(prov, tier)
+            resolved_model = model or self._model_for(prov, tier)
             if not self._provider_available(prov, resolved_model):
                 logger.debug("Provider %s skipped (no API key / model)", prov)
                 continue
@@ -186,7 +186,10 @@ class LLMRouter:
 
     async def embed(self, text: str) -> list[float]:
         """Embed text locally via Ollama (nomic-embed-text)."""
-        url = f"{settings.OLLAMA_ENDPOINT}/api/embeddings"
+        from .main import get_overrides
+        ov = get_overrides()
+        endpoint = ov.ollama_endpoint or settings.OLLAMA_ENDPOINT
+        url = f"{endpoint}/api/embeddings"
         try:
             # Embedding calls use a longer timeout — Ollama can take 30s+
             # to load a model on cold start, then it's fast.
@@ -206,10 +209,17 @@ class LLMRouter:
     # -- internals ----------------------------------------------------------
 
     def _model_for(self, provider: str, tier: str) -> str | None:
-        """Resolve the model for a provider+tier, or None if unavailable."""
-        # For lmstudio / custom, use the explicit model name from settings
+        """Resolve the model for a provider+tier, or None if unavailable.
+
+        Checks per-request overrides from Settings UI headers first,
+        falling back to .env config.
+        """
+        from .main import get_overrides
+        ov = get_overrides()
+
+        # For lmstudio / custom, use the explicit model name
         if provider == "lmstudio":
-            return settings.LMSTUDIO_MODEL or None
+            return (ov.lmstudio_model or settings.LMSTUDIO_MODEL) or None
         if provider == "custom":
             return settings.CUSTOM_LLM_MODEL or None
 
@@ -217,10 +227,10 @@ class LLMRouter:
         model = tier_models.get(provider)
         if not model:
             return None
-        # Check the provider has credentials configured
-        if provider == "nvidia" and not settings.NVIDIA_NIM_API_KEY:
+        # Check the provider has credentials (override or env)
+        if provider == "nvidia" and not (ov.nvidia_api_key or settings.NVIDIA_NIM_API_KEY):
             return None
-        if provider == "openrouter" and not settings.OPENROUTER_API_KEY:
+        if provider == "openrouter" and not (ov.openrouter_api_key or settings.OPENROUTER_API_KEY):
             return None
         return model
 
@@ -277,15 +287,17 @@ class LLMRouter:
         cache_control: bool,
         json_mode: bool,
     ) -> dict[str, Any]:
-        # Resolve endpoint and API key per provider
+        # Resolve endpoint and API key per provider (overrides from Settings UI first)
+        from .main import get_overrides
+        ov = get_overrides()
         if provider == "nvidia":
-            endpoint = settings.NVIDIA_NIM_ENDPOINT
-            api_key = settings.NVIDIA_NIM_API_KEY
+            endpoint = ov.nvidia_endpoint or settings.NVIDIA_NIM_ENDPOINT
+            api_key = ov.nvidia_api_key or settings.NVIDIA_NIM_API_KEY
         elif provider == "openrouter":
-            endpoint = settings.OPENROUTER_ENDPOINT
-            api_key = settings.OPENROUTER_API_KEY
+            endpoint = ov.openrouter_endpoint or settings.OPENROUTER_ENDPOINT
+            api_key = ov.openrouter_api_key or settings.OPENROUTER_API_KEY
         elif provider == "lmstudio":
-            endpoint = settings.LMSTUDIO_ENDPOINT
+            endpoint = ov.lmstudio_endpoint or settings.LMSTUDIO_ENDPOINT
             api_key = settings.LMSTUDIO_API_KEY
         elif provider == "custom":
             endpoint = settings.CUSTOM_LLM_ENDPOINT
@@ -337,7 +349,10 @@ class LLMRouter:
                     "content": "/no_think\n" + messages[0]["content"],
                 }
 
-        url = f"{settings.OLLAMA_ENDPOINT}/api/chat"
+        from .main import get_overrides
+        ov = get_overrides()
+        endpoint = ov.ollama_endpoint or settings.OLLAMA_ENDPOINT
+        url = f"{endpoint}/api/chat"
         resp = await self._client.post(
             url,
             json={

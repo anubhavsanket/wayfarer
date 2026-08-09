@@ -97,6 +97,14 @@ def _resolve_path(obj: Any, path: str) -> Any:
 
 def _get_api_key(board: JobBoardEntry) -> str | None:
     if board.auth == "api_key" and board.api_key_env:
+        # Check per-request override from Settings UI headers first
+        try:
+            from ..main import get_overrides
+            ov = get_overrides()
+            if board.name == "bluedoor" and ov.bluedoor_api_key:
+                return ov.bluedoor_api_key
+        except ImportError:
+            pass
         return os.environ.get(board.api_key_env)
     return None
 
