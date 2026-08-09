@@ -417,6 +417,9 @@ async def jobs_match(
         filtered = mock_matches
         if min_score > 0:
             filtered = [m for m in filtered if m.match_score >= min_score]
+        source_list = [s.strip().lower() for s in sources.split(",") if s.strip()] if sources else []
+        if source_list:
+            filtered = [m for m in filtered if m.source.lower() in source_list]
         location_pref = LocationPreference(
             mode=location_mode,
             cities=[c.strip() for c in cities.split(",") if c.strip()],
