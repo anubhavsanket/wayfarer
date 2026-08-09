@@ -1,0 +1,5 @@
+# Normalize line endings for files that Docker Compose parses.
+# Windows clones produce \r\n which breaks env_file parsing.
+.env text eol=lf
+.env.example text eol=lf
+*.sh text eol=lf

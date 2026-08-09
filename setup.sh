@@ -45,6 +45,8 @@ fi
 if [ ! -f ".env" ]; then
     echo -e "${YELLOW}Creating .env from template...${NC}"
     cp .env.example .env
+    # Fix Windows line endings (\r\n → \n) — Docker Compose can't parse \r
+    sed -i 's/\r$//' .env 2>/dev/null || sed -i '' 's/\r$//' .env
     echo -e "${GREEN}Created .env — edit it to add your API keys.${NC}"
     echo ""
     echo "Required keys (at least one LLM provider):"
