@@ -22,7 +22,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-from ..models.schemas import StructuralIssue, StructuralIssueType, StructuralIssueType, StructuralIssueType, StructuralIssueType, StructuralIssueType, StructuralIssueType, StructuralIssueType, StructuralIssueType, StructuralIssueType, StructuralIssueType, StructuralIssueType
+from ..models.schemas import StructuralIssue, StructuralIssueType
 
 logger = logging.getLogger(__name__)
 
@@ -388,6 +388,27 @@ def _check_resume_length(raw_text: str) -> list[StructuralIssue]:
     return []
 
 
+def _run_section_checks(
+    sections: dict[str, list[str]],
+    contact: dict[str, str],
+    raw_text: str,
+) -> list[StructuralIssue]:
+    """Run structural checks that apply regardless of the parse backend.
+
+    Table-loss detection (``_detect_structural_issues``) is deliberately
+    *not* included here — AnyDoc converts tables to text natively, so it only
+    matters for the legacy fallback parsers. The section/contact/length checks
+    must run on every path (markdown, AnyDoc, and legacy) or the
+    severity-weighted ATS penalty silently never fires.
+    """
+    issues: list[StructuralIssue] = []
+    issues.extend(_check_missing_sections(sections))
+    issues.extend(_check_section_order(sections))
+    issues.extend(_check_contact_completeness(contact))
+    issues.extend(_check_resume_length(raw_text))
+    return issues
+
+
 # ---------------------------------------------------------------------------
 # Section extraction
 # ---------------------------------------------------------------------------
@@ -482,7 +503,7 @@ def parse_resume(file_path: str | Path) -> ParsedResume:
                 sections=sections,
                 bullets=bullets,
                 ats_visible_text=md_text,
-                structural_issues=[],
+                structural_issues=_run_section_checks(sections, contact, raw_text),
                 contact=contact,
                 raw_text=raw_text,
             )
@@ -495,11 +516,13 @@ def parse_resume(file_path: str | Path) -> ParsedResume:
         ats_text = md_text  # AnyDoc markdown IS the clean text
         sections, bullets = _parse_sections(lines)
         contact = _extract_contact(lines)
+        # Table-loss detection is skipped for AnyDoc (it converts tables to
+        # text natively), but section/contact/length checks still apply.
         return ParsedResume(
             sections=sections,
             bullets=bullets,
             ats_visible_text=ats_text,
-            structural_issues=[],  # AnyDoc handles tables natively
+            structural_issues=_run_section_checks(sections, contact, raw_text),
             contact=contact,
             raw_text=raw_text,
         )
@@ -544,11 +567,8 @@ def parse_resume(file_path: str | Path) -> ParsedResume:
 
     contact = _extract_contact(raw_lines)
 
-    # Additional structural checks (order matters — section checks need sections)
-    structural_issues.extend(_check_missing_sections(sections))
-    structural_issues.extend(_check_section_order(sections))
-    structural_issues.extend(_check_contact_completeness(contact))
-    structural_issues.extend(_check_resume_length(raw_text))
+    # Section/contact/length checks apply on every parse path
+    structural_issues.extend(_run_section_checks(sections, contact, raw_text))
 
     return ParsedResume(
         sections=sections,

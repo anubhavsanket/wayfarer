@@ -71,16 +71,20 @@ def tmp_resume_with_table(tmp_path):
 
 @pytest.fixture
 def tmp_resume_simple(tmp_path):
-    """A simple flat resume without tables — parser should NOT flag structural loss."""
+    """A simple flat resume without tables — parser should NOT flag structural loss.
+
+    Uses standard section order (Experience → Education → Skills) and complete
+    contact info (email/phone/LinkedIn) so every structural check passes.
+    """
     doc = Document()
     doc.add_paragraph("Anubhav Sharma")
-    doc.add_paragraph("anubhav@example.com")
-    doc.add_paragraph("Skills")
-    doc.add_paragraph("Python, FastAPI, ChromaDB")
+    doc.add_paragraph("anubhav@example.com | +91-9999999999 | linkedin.com/in/anubhav")
     doc.add_paragraph("Experience")
     doc.add_paragraph("Built RAG systems with ChromaDB and FastAPI")
     doc.add_paragraph("Education")
     doc.add_paragraph("B.Tech CS, IIT Delhi")
+    doc.add_paragraph("Skills")
+    doc.add_paragraph("Python, FastAPI, ChromaDB")
 
     path = tmp_path / "simple_resume.docx"
     doc.save(str(path))
@@ -127,6 +131,54 @@ def test_parser_rejects_unsupported_format(tmp_path):
     f.write_text("not a real resume")
     with pytest.raises(ValueError):
         parse_resume(f)
+
+
+@pytest.mark.parametrize("ext", ["docx", "md"])
+def test_structural_checks_fire_on_every_parse_path(tmp_path, ext):
+    """Regression: section/contact/length checks must run on ALL parse paths.
+
+    Previously they were only wired into the legacy fallback parser, so with
+    AnyDoc installed (the primary parser for DOCX/PDF) a resume that was
+    missing sections and contact info returned zero structural issues — the
+    severity-weighted ATS penalty silently never fired. This test feeds a
+    deficient resume through parse_resume end-to-end (both the AnyDoc and
+    markdown paths) and asserts the expected issues are produced.
+    """
+    from backend.app.services.resume_parser import parse_resume
+    from backend.app.models.schemas import StructuralIssueType
+
+    lines = [
+        "Anubhav Sharma",
+        "Summary",
+        "GenAI engineer with RAG experience.",
+        "Experience",
+        "Built ChromaDB-backed RAG systems.",
+    ]
+    if ext == "md":
+        path = tmp_path / "deficient.md"
+        path.write_text("\n".join(lines))
+    else:
+        doc = Document()
+        for line in lines:
+            doc.add_paragraph(line)
+        path = tmp_path / "deficient.docx"
+        doc.save(str(path))
+
+    parsed = parse_resume(str(path))
+
+    missing = [i for i in parsed.structural_issues
+               if i.type == StructuralIssueType.MISSING_SECTION]
+    contact = [i for i in parsed.structural_issues
+               if i.type == StructuralIssueType.CONTACT_INCOMPLETE]
+
+    # Education (high) + Skills (medium) missing → 2 issues
+    assert {i.severity for i in missing} == {"high", "medium"}
+    # No email (high) / phone (medium) / LinkedIn (low) → 3 issues
+    assert {i.severity for i in contact} == {"high", "medium", "low"}
+    # Exactly these 5 — no section-order or length noise for this resume
+    assert len(parsed.structural_issues) == 5
+    # Every issue must carry an actionable suggestion (plan requirement)
+    assert all(i.suggestion for i in parsed.structural_issues)
 
 
 # ---------------------------------------------------------------------------
