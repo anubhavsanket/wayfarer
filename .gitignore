@@ -40,3 +40,4 @@ test_resume.*
 .DS_Store
 Thumbs.db
 .claude/
+.plans/
