@@ -138,7 +138,7 @@ def test_ats_score_changes_with_structural_fix():
     from backend.app.models.schemas import KeywordGap, ConfidenceTier, StructuralIssue
     from backend.app.services.resume_parser import ParsedResume
 
-    # Baseline: no structural issues, all keywords covered
+    # Baseline: no structural issues, all keywords covered (enough for full range)
     parsed = ParsedResume(
         sections={"skills": [], "experience": []},
         bullets=[],
@@ -147,6 +147,8 @@ def test_ats_score_changes_with_structural_fix():
     )
     gaps = [
         KeywordGap(keyword="python", tier=ConfidenceTier.VERIFIED, confidence=1.0, rationale=""),
+        KeywordGap(keyword="aws", tier=ConfidenceTier.VERIFIED, confidence=1.0, rationale=""),
+        KeywordGap(keyword="docker", tier=ConfidenceTier.VERIFIED, confidence=1.0, rationale=""),
     ]
     perfect_score = _compute_ats_score(parsed, gaps)
     assert perfect_score == 1.0
@@ -166,16 +168,21 @@ def test_ats_score_drops_with_more_gaps():
     parsed = ParsedResume(
         sections={}, bullets=[], ats_visible_text="", structural_issues=[],
     )
+    # Use enough keywords (5+) so the minimum threshold doesn't cap the score
     base = [
         KeywordGap(keyword="python", tier=ConfidenceTier.VERIFIED, confidence=1.0, rationale=""),
         KeywordGap(keyword="aws", tier=ConfidenceTier.VERIFIED, confidence=1.0, rationale=""),
+        KeywordGap(keyword="docker", tier=ConfidenceTier.VERIFIED, confidence=1.0, rationale=""),
+        KeywordGap(keyword="sql", tier=ConfidenceTier.VERIFIED, confidence=1.0, rationale=""),
+        KeywordGap(keyword="react", tier=ConfidenceTier.VERIFIED, confidence=1.0, rationale=""),
     ]
     base_score = _compute_ats_score(parsed, base)
 
-    # Add 2 gaps
+    # Add 3 gaps (now 5 matched + 3 gaps = 8 keywords, well above threshold)
     base.extend([
         KeywordGap(keyword="k8s", tier=ConfidenceTier.GAP, confidence=None, rationale=""),
         KeywordGap(keyword="rust", tier=ConfidenceTier.GAP, confidence=None, rationale=""),
+        KeywordGap(keyword="go", tier=ConfidenceTier.GAP, confidence=None, rationale=""),
     ])
     new_score = _compute_ats_score(parsed, base)
     assert new_score < base_score
