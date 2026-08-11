@@ -44,13 +44,16 @@ async def _extract_jd_keywords(jd_text: str) -> list[str]:
     jd_text = _strip_boilerplate(jd_text)
 
     prompt = (
-        "Extract the key technical and professional keywords (skills, tools, "
-        "languages, frameworks, certifications) a candidate must demonstrate "
-        "for this job description.\n"
+        "Extract the key keywords from this job description that a candidate "
+        "must demonstrate to be qualified. Include:\n"
+        "- Technical skills and tools (Python, SQL, Excel, AWS, etc.)\n"
+        "- Domain knowledge (logistics, finance, data analysis, etc.)\n"
+        "- Required qualifications (degrees, certifications, years of experience)\n"
+        "- Key responsibilities as short phrases (e.g. 'process automation', 'stakeholder communication')\n\n"
         "Rules:\n"
         "- Return ONLY a JSON list of strings, no commentary.\n"
-        "- Include concrete skills/tools (e.g. 'Python', 'PyTorch', 'AWS').\n"
-        "- Include soft-skill phrases only if stated explicitly.\n"
+        "- Be generous — extract at least 8-15 keywords even for non-technical roles.\n"
+        "- Each keyword should be a concrete, checkable skill or qualification.\n"
         "- Max 25 keywords.\n\n"
         f"JOB DESCRIPTION:\n{jd_text[:6000]}"
     )
@@ -126,6 +129,10 @@ def _compute_ats_score(
     Structural parseability: starts at 1.0, penalised per structural issue.
     Keyword coverage: fraction of JD keywords present in ATS-visible text.
     Weights per PRD: structural 40%, keyword coverage 60%.
+
+    A minimum of 3 keywords is required for a meaningful score. If fewer
+    keywords are extracted (e.g. the JD is very short or non-technical),
+    the score is capped to avoid misleading 100% results on 1 keyword.
     """
     # Structural component — each unresolved structural issue costs 0.15
     structural_score = max(0.0, 1.0 - 0.15 * len(parsed.structural_issues))
@@ -141,7 +148,21 @@ def _compute_ats_score(
         # No keywords extracted = can't assess coverage, not a perfect match
         keyword_score = 0.0
 
-    return round(0.4 * structural_score + 0.6 * keyword_score, 3)
+    raw_score = 0.4 * structural_score + 0.6 * keyword_score
+
+    # Cap score when too few keywords — a 100% match on 1 keyword is misleading.
+    # Scale: 1 keyword → max 30%, 2 keywords → max 50%, 3+ keywords → full range.
+    num_keywords = len(keyword_gaps)
+    if num_keywords == 0:
+        max_score = 0.0
+    elif num_keywords == 1:
+        max_score = 0.30
+    elif num_keywords == 2:
+        max_score = 0.50
+    else:
+        max_score = 1.0
+
+    return round(min(raw_score, max_score), 3)
 
 
 # ---------------------------------------------------------------------------

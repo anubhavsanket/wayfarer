@@ -24,6 +24,7 @@ RUN playwright install chromium
 USER root
 
 COPY --chown=appuser:appuser backend/app ./app
+RUN mkdir -p /app/cache/content_hashes && chown -R appuser:appuser /app/cache
 
 USER appuser
 EXPOSE 8000
