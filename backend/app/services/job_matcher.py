@@ -44,6 +44,174 @@ SEMANTIC_WEIGHT = settings.JOBS_SEMANTIC_WEIGHT
 KEYWORD_WEIGHT = settings.JOBS_KEYWORD_WEIGHT
 TOP_K_EMBEDDING_SURVIVORS = settings.JOBS_TOP_K_EMBEDDING_SURVIVORS
 
+# ---------------------------------------------------------------------------
+# City alias map — bidirectional matching for common city name variants
+# ---------------------------------------------------------------------------
+
+_CITY_ALIASES: dict[str, list[str]] = {
+    # India
+    "bengaluru": ["bangalore", "blore", "bengaluru"],
+    "bangalore": ["bengaluru", "blore", "bangalore"],
+    "mumbai": ["bombay", "mumbai"],
+    "bombay": ["mumbai", "bombay"],
+    "chennai": ["madras", "chennai"],
+    "madras": ["chennai", "madras"],
+    "delhi": ["new delhi", "delhi", "ncr"],
+    "new delhi": ["delhi", "ncr"],
+    "hyderabad": ["secunderabad", "hyderabad"],
+    "pune": ["poona", "pune"],
+    "kolkata": ["calcutta", "kolkata"],
+    # US
+    "new york": ["nyc", "new york city", "new york"],
+    "nyc": ["new york", "new york city"],
+    "san francisco": ["sf", "sfo", "san francisco"],
+    "sf": ["san francisco", "sfo"],
+    "los angeles": ["la", "los angeles"],
+    "la": ["los angeles"],
+    "washington": ["dc", "washington dc", "washington d.c."],
+    "dc": ["washington", "washington dc"],
+    "bay area": ["san francisco", "san jose", "oakland", "bay area"],
+    # Europe
+    "london": ["london"],
+    "berlin": ["berlin"],
+    "paris": ["paris"],
+    # Common abbreviations
+    "uk": ["united kingdom", "england", "great britain"],
+    "us": ["united states", "usa", "america"],
+    "eu": ["europe", "european union"],
+}
+
+
+def _normalize_city(city: str) -> str:
+    """Normalize a city name to its canonical form via the alias map."""
+    lower = city.lower().strip()
+    for canonical, variants in _CITY_ALIASES.items():
+        if lower == canonical or lower in variants:
+            return canonical
+    return lower
+
+
+def _expand_cities(cities: list[str]) -> set[str]:
+    """Expand user-provided city names to include all known aliases.
+
+    Returns a flat set of all variants so token matching catches any spelling.
+    """
+    expanded: set[str] = set()
+    for city in cities:
+        canonical = _normalize_city(city)
+        variants = _CITY_ALIASES.get(canonical, [canonical])
+        expanded.update(v.lower() for v in variants)
+        expanded.add(canonical.lower())
+    return expanded
+
+
+# ---------------------------------------------------------------------------
+# Title-only posting enrichment
+# ---------------------------------------------------------------------------
+
+_MAX_ENRICH = 30  # cap enrichment requests per call to bound latency
+_ENRICH_TIMEOUT = 10  # seconds per detail fetch
+_ENRICH_CONCURRENCY = 10
+
+
+async def _enrich_title_only_postings(postings: list[JobPosting]) -> list[JobPosting]:
+    """Fetch descriptions for title-only postings (LinkedIn, bluedoor).
+
+    Boards like LinkedIn guest API and bluedoor return titles but no JD body,
+    giving these postings a flat 0.0 semantic score. This function fetches
+    the detail page for each title-only posting and extracts the description,
+    allowing them to be embedded and scored properly.
+
+    Capped at ``_MAX_ENRICH`` postings per call to bound latency.
+    """
+    import asyncio
+    import re as _re
+
+    title_only = [p for p in postings if not p.description and p.url]
+    if not title_only:
+        return postings
+
+    # Prioritise by title overlap score (most relevant first)
+    # We don't have bullets here, so just take the first N
+    to_enrich = title_only[:_MAX_ENRICH]
+    sem = asyncio.Semaphore(_ENRICH_CONCURRENCY)
+
+    async def _fetch_detail(client: httpx.AsyncClient, posting: JobPosting) -> str:
+        """Fetch and extract description text from a posting's detail page."""
+        async with sem:
+            try:
+                # LinkedIn guest detail endpoint
+                if "linkedin.com/jobs/view/" in posting.url:
+                    job_id_match = re.search(r"/(\d+)(?:\?|$)", posting.url)
+                    if job_id_match:
+                        detail_url = (
+                            f"https://www.linkedin.com/jobs-guest/jobs/api/jobPosting/"
+                            f"{job_id_match.group(1)}"
+                        )
+                    else:
+                        detail_url = posting.url
+                else:
+                    detail_url = posting.url
+
+                resp = await client.get(
+                    detail_url,
+                    timeout=_ENRICH_TIMEOUT,
+                    follow_redirects=True,
+                )
+                if not resp.is_success:
+                    return ""
+
+                html = resp.text
+
+                # LinkedIn: extract from show-more-less-html__markup div
+                if "linkedin.com" in detail_url:
+                    match = _re.search(
+                        r'class="show-more-less-html__markup[^"]*"[^>]*>(.*?)</div>',
+                        html, _re.DOTALL,
+                    )
+                    if match:
+                        text = _re.sub(r"<[^>]+>", " ", match.group(1))
+                        return " ".join(text.split()).strip()[:4000]
+
+                # Generic: extract all visible text, take first 4000 chars
+                try:
+                    from bs4 import BeautifulSoup
+                    soup = BeautifulSoup(html, "html.parser")
+                    # Remove script/style tags
+                    for tag in soup(["script", "style", "nav", "header", "footer"]):
+                        tag.decompose()
+                    text = soup.get_text(separator=" ", strip=True)
+                    return text[:4000]
+                except ImportError:
+                    # Fallback: regex strip
+                    text = _re.sub(r"<[^>]+>", " ", html)
+                    return " ".join(text.split()).strip()[:4000]
+
+            except Exception as exc:
+                logger.debug("Enrichment failed for %s: %s", posting.id, exc)
+                return ""
+
+    async with httpx.AsyncClient(
+        timeout=_ENRICH_TIMEOUT,
+        headers={"User-Agent": "Mozilla/5.0 (compatible; wayfarer/1.1)"},
+    ) as client:
+        tasks = [_fetch_detail(client, p) for p in to_enrich]
+        descriptions = await asyncio.gather(*tasks)
+
+    enriched_count = 0
+    for posting, desc in zip(to_enrich, descriptions):
+        if desc:
+            posting.description = desc
+            enriched_count += 1
+
+    if enriched_count:
+        logger.info(
+            "Enriched %d/%d title-only postings with descriptions",
+            enriched_count, len(to_enrich),
+        )
+
+    return postings
+
 
 # ---------------------------------------------------------------------------
 # Posting discovery + dedup
@@ -68,15 +236,36 @@ async def _discover_postings() -> list[JobPosting]:
         await connector.aclose()
 
 
-def _dedupe_postings(postings: list[JobPosting]) -> list[JobPosting]:
-    """Deduplicate by (title.lower(), company.lower(), url) — FR3.9."""
+def _dedupe_postings(
+    postings: list[JobPosting],
+    cache: Any | None = None,
+) -> list[JobPosting]:
+    """Deduplicate by (title.lower(), company.lower(), url) — FR3.9.
+
+    When a ``cache`` (ContentHashCache) is provided, also checks persistent
+    cross-request dedup. New postings are marked as seen so subsequent calls
+    within the TTL window return them as duplicates.
+    """
     seen: set[str] = set()
     out: list[JobPosting] = []
     for p in postings:
         key = (p.title.lower(), p.company.lower(), p.url or "")
-        if key not in seen:
-            seen.add(key)
-            out.append(p)
+        dedup_key = f"{key[0]}::{key[1]}::{key[2]}"
+
+        # In-memory dedup (within this request)
+        if key in seen:
+            continue
+
+        # Persistent dedup (across requests)
+        if cache is not None:
+            cache_key = cache.make_key(dedup_key)
+            if cache.get(cache_key) is not None:
+                continue
+            # Mark as seen for future requests
+            cache.set(cache_key, True)
+
+        seen.add(key)
+        out.append(p)
     return out
 
 
@@ -140,6 +329,106 @@ def _drop_stale(postings: list[JobPosting], ttl_days: int = 30) -> list[JobPosti
     if dropped:
         logger.info("Dropped %d stale postings (older than %d days)", dropped, ttl_days)
     return out
+
+
+# ---------------------------------------------------------------------------
+# Mass-posting detection and consolidation
+# ---------------------------------------------------------------------------
+
+def _consolidate_mass_postings(postings: list[JobPosting]) -> list[JobPosting]:
+    """Detect and consolidate identical roles posted across multiple cities.
+
+    When 3+ postings share the same title and company but differ only in
+    location, keeps the best one (most complete description) and records the
+    other cities in ``also_available_in``. This prevents identical roles from
+    inflating the result set (ai-job-search Step 2.5 pattern).
+    """
+    from collections import defaultdict
+
+    # Group by (title.lower, company.lower)
+    groups: dict[tuple[str, str], list[JobPosting]] = defaultdict(list)
+    for p in postings:
+        key = (p.title.lower().strip(), p.company.lower().strip())
+        groups[key].append(p)
+
+    consolidated: list[JobPosting] = []
+    mass_count = 0
+
+    for (title, company), group in groups.items():
+        if len(group) < 3:
+            # Not enough to be a mass posting — keep all
+            consolidated.extend(group)
+            continue
+
+        # Check if they differ only in location (same description or all empty)
+        descriptions = {(p.description or "").strip() for p in group}
+        if len(descriptions) > 2:
+            # Too many different descriptions — probably different roles, keep all
+            consolidated.extend(group)
+            continue
+
+        # Mass posting detected — keep the best one (longest description)
+        best = max(group, key=lambda p: len(p.description or ""))
+        other_locations = [
+            p.location for p in group
+            if p.location and p.location != best.location
+        ]
+        if other_locations:
+            best.also_available_in = list(dict.fromkeys(other_locations))  # dedup, preserve order
+            best.flags.append("mass_posting")
+        consolidated.append(best)
+        mass_count += 1
+
+    if mass_count:
+        logger.info("Consolidated %d mass-posting groups (%d postings → %d)",
+                     mass_count, len(postings), len(consolidated))
+    return consolidated
+
+
+def _consolidate_mass_matches(matches: list[JobMatch]) -> list[JobMatch]:
+    """Consolidate mass-postings at the JobMatch level (after scoring).
+
+    Same logic as ``_consolidate_mass_postings`` but works on scored matches.
+    Keeps the highest-scoring match per group and records other cities.
+    """
+    from collections import defaultdict
+
+    groups: dict[tuple[str, str], list[JobMatch]] = defaultdict(list)
+    for m in matches:
+        key = (m.title.lower().strip(), m.company.lower().strip())
+        groups[key].append(m)
+
+    consolidated: list[JobMatch] = []
+    mass_count = 0
+
+    for (title, company), group in groups.items():
+        if len(group) < 3:
+            consolidated.extend(group)
+            continue
+
+        # Check location diversity — if all same location, not a mass posting
+        locations = {m.location for m in group if m.location}
+        if len(locations) < 2:
+            consolidated.extend(group)
+            continue
+
+        # Keep the best-scoring match, collect other cities
+        best = max(group, key=lambda m: m.match_score)
+        other_locations = [
+            m.location for m in group
+            if m.location and m.location != best.location
+        ]
+        if other_locations:
+            best.also_available_in = list(dict.fromkeys(other_locations))
+            if "mass_posting" not in best.flags:
+                best.flags.append("mass_posting")
+        consolidated.append(best)
+        mass_count += 1
+
+    if mass_count:
+        logger.info("Consolidated %d mass-posting match groups (%d → %d)",
+                     mass_count, len(matches), len(consolidated))
+    return consolidated
 
 
 def _normalise_remote_type(raw: str | None) -> str:
@@ -206,7 +495,66 @@ async def _compute_semantic_scores(
     return scored
 
 
-def _title_overlap_score(posting: JobPosting, bullets: list[Any]) -> float:
+# ---------------------------------------------------------------------------
+# Search query decomposition — expand resume keywords for broader matching
+# ---------------------------------------------------------------------------
+
+_EXPANSION_PROMPT = """\
+Given these job-related keywords from a resume, return a JSON list of 2-3 related \
+synonyms, abbreviations, or common alternative terms for each. \
+Return ONLY the expanded list as a flat JSON array of strings, no commentary.
+
+Keywords: {keywords}
+"""
+
+_expansion_cache: dict[str, list[str]] = {}
+
+
+async def _decompose_job_query(keywords: list[str]) -> list[str]:
+    """Expand resume keywords into related terms via LLM.
+
+    E.g., ['machine learning', 'pytorch', 'transformer'] →
+    ['machine learning', 'ML', 'deep learning', 'pytorch', 'transformer',
+     'neural network', 'AI', 'LLM'].
+
+    Results are cached in-memory so the expansion happens once per session.
+    """
+    cache_key = "::".join(sorted(k.lower() for k in keywords))
+    if cache_key in _expansion_cache:
+        return _expansion_cache[cache_key]
+
+    if not keywords:
+        return []
+
+    try:
+        resp = await router.chat(
+            messages=[{"role": "user", "content": _EXPANSION_PROMPT.format(
+                keywords=", ".join(keywords[:10])
+            )}],
+            tier="simple",
+            max_tokens=200,
+        )
+        raw = resp["content"]
+        result = extract_json(raw)
+        if isinstance(result, list):
+            expanded = [str(k).strip().lower() for k in result if k]
+        else:
+            expanded = []
+    except Exception as exc:
+        logger.debug("Query expansion failed: %s", exc)
+        expanded = []
+
+    # Always include the original keywords
+    all_terms = list(set([k.lower() for k in keywords] + expanded))
+    _expansion_cache[cache_key] = all_terms
+    return all_terms
+
+
+def _title_overlap_score(
+    posting: JobPosting,
+    bullets: list[Any],
+    expanded_terms: set[str] | None = None,
+) -> float:
     """Zero-token relevance score for postings without a description.
 
     Boards that only expose title/company cards (LinkedIn guest API, some
@@ -214,6 +562,9 @@ def _title_overlap_score(posting: JobPosting, bullets: list[Any]) -> float:
     by the fraction of title/company tokens that also appear in the resume —
     a cheap lexical proxy so they can be ranked by the top-K survivor cutoff
     instead of getting a flat 0.0 and being dropped (§9.6).
+
+    When ``expanded_terms`` is provided (from ``_decompose_job_query``),
+    also checks whether posting tokens match expanded resume keywords.
     """
     # Require ≥2 chars to avoid single-letter false positives ('t' in 'fastapi',
     # 'c' in 'python') that produce spurious substring matches against resume text.
@@ -222,7 +573,40 @@ def _title_overlap_score(posting: JobPosting, bullets: list[Any]) -> float:
         return 0.0
     resume_text = " ".join(b.text.lower() for b in bullets if b.text)
     hits = sum(1 for t in tokens if t in resume_text)
-    return hits / len(tokens)
+    # Also check against expanded terms (broader matching)
+    if expanded_terms:
+        hits += sum(1 for t in tokens if t in expanded_terms and t not in resume_text)
+    return min(hits / len(tokens), 1.0)  # cap at 1.0 since expanded terms can inflate hits
+
+
+def _lexical_pre_filter(
+    postings: list[JobPosting],
+    bullets: list[Any],
+    top_n: int,
+) -> list[JobPosting]:
+    """Cheap lexical pre-filter: rank all postings by title+description token overlap.
+
+    Zero-cost (no LLM/embedding calls). Returns the top ``top_n`` postings
+    by lexical relevance score, so the embedding budget is spent on the most
+    promising candidates rather than the first N alphabetically.
+    """
+    resume_text = " ".join(b.text.lower() for b in bullets if b.text)
+    if not resume_text:
+        return postings[:top_n]
+
+    scored: list[tuple[JobPosting, float]] = []
+    for p in postings:
+        # Score = fraction of posting tokens found in resume
+        text = f"{p.title} {p.company} {p.description or ''}".lower()
+        tokens = set(re.findall(r"[a-z0-9+#.]{2,}", text))
+        if not tokens:
+            scored.append((p, 0.0))
+            continue
+        hits = sum(1 for t in tokens if t in resume_text)
+        scored.append((p, hits / len(tokens)))
+
+    scored.sort(key=lambda t: t[1], reverse=True)
+    return [p for p, _ in scored[:top_n]]
 
 
 def _select_survivors(
@@ -422,6 +806,13 @@ async def _match_one(
     flag_dicts = check_posting(posting, needs_sponsorship=getattr(settings, 'NEEDS_VISA_SPONSORSHIP', False))
     flags = [f["kind"] for f in flag_dicts]
 
+    # Legitimacy penalty: ghost/scam postings score lower, no-sponsorship even lower
+    if "ghost_posting" in flags:
+        hybrid *= 0.5
+    if "no_sponsorship" in flags:
+        hybrid *= 0.3
+    hybrid = round(hybrid, 3)
+
     # Fresher Mode: classify experience level (§15.1)
     # Skip expensive LLM classification when not in fresher mode
     if fresher_only:
@@ -459,17 +850,23 @@ def _loc_tokens(loc: str | None) -> set[str]:
 
 
 def _city_matches(loc_tokens: set[str], city: str) -> bool:
-    """Whole-word city match: every word of the city must appear in the location.
+    """Whole-word city match with alias expansion.
 
     Substring matching is too loose — a short city like 'ny' or 'us' matches
     the middle of unrelated words ('any', 'house'). Token matching requires
     the full city phrase: 'San Francisco' matches 'San Francisco, CA' but
     not 'Santa Clara'.
+
+    Expands the city through the alias map so "Bangalore" matches "Bengaluru"
+    and vice versa.
     """
-    city_tokens = _LOC_TOKEN_RE.findall(city.lower())
-    if not city_tokens:
-        return False
-    return all(t in loc_tokens for t in city_tokens)
+    canonical = _normalize_city(city)
+    variants = _CITY_ALIASES.get(canonical, [canonical])
+    for variant in variants:
+        city_tokens = _LOC_TOKEN_RE.findall(variant.lower())
+        if city_tokens and all(t in loc_tokens for t in city_tokens):
+            return True
+    return False
 
 
 def _apply_location_preference(
@@ -485,7 +882,9 @@ def _apply_location_preference(
       RELOCATION_REQUIRED if not exact
     """
     mode = pref.mode
-    cities = [c.lower().strip() for c in pref.cities if c]
+    # Expand user cities through alias map for bidirectional matching
+    raw_cities = [c.lower().strip() for c in pref.cities if c]
+    cities = list(_expand_cities(raw_cities)) if raw_cities else []
     remote_ok = pref.remote_ok
 
     def _city_in_tokens(loc_tokens: set[str]) -> bool:
@@ -627,10 +1026,17 @@ async def match_jobs(
                      len(resume_graph.nodes), len(resume_graph.edges))
 
     # 1. Discovery + dedup + normalise + drop stale (zero-token)
-    postings = _dedupe_postings(await _discover_postings())
+    try:
+        from ..utils.cache import dedup_cache
+        cache = dedup_cache
+    except Exception:
+        cache = None
+    postings = _dedupe_postings(await _discover_postings(), cache=cache)
     if not postings:
         return JobMatchResponse(matches=[], aggregate_gaps=[])
     postings = _normalise_postings(postings)
+    # Enrich title-only postings (LinkedIn, bluedoor) with fetched descriptions
+    postings = await _enrich_title_only_postings(postings)
     postings = _drop_stale(postings, ttl_days=max_age_days)
 
     # Filter by source if specified
@@ -641,29 +1047,42 @@ async def match_jobs(
 
     logger.info("After pipeline cleanup: %d postings (max_age=%d days)", len(postings), max_age_days)
 
-    # 2. Embedding similarity (rank all, keep top-K)
-    # Limit embedding to first 50 postings with descriptions to bound latency
-    # (each embedding takes ~8s on CPU, so 200 × 8 = 26min is unacceptable)
-    MAX_EMBED_POSTINGS = 50
+    # 2. Two-pass embedding similarity (rank all, keep top-K)
+    # Pass 1: cheap lexical pre-filter narrows to top N candidates
+    # Pass 2: embed only those N (bounded by JOBS_MAX_EMBED_POSTINGS)
+    max_embed = settings.JOBS_MAX_EMBED_POSTINGS
+    prefilter_n = settings.JOBS_LEXICAL_PREFILTER_TOP_N
+
+    # Expand resume keywords for broader title matching (query decomposition)
+    resume_keywords = list(set(
+        b.text.lower() for b in parsed.bullets if b.text
+    ))[:10]
+    expanded_terms = await _decompose_job_query(resume_keywords)
+    expanded_set = set(expanded_terms)
+    logger.info("Query expansion: %d original keywords → %d total terms", len(resume_keywords), len(expanded_set))
+
     resume_vec = await _embed_resume(parsed)
     if resume_vec is not None:
-        # Prioritise postings that have descriptions (they can actually be embedded)
         with_desc = [p for p in postings if p.description]
         without_desc = [p for p in postings if not p.description]
-        to_embed = with_desc[:MAX_EMBED_POSTINGS]
-        logger.info("Embedding %d of %d postings with descriptions (%d skipped, %d without desc)",
-                     len(to_embed), len(with_desc), max(0, len(with_desc) - MAX_EMBED_POSTINGS), len(without_desc))
+        logger.info("Two-pass: %d with desc, %d without desc", len(with_desc), len(without_desc))
+
+        # Pass 1: lexical pre-filter (zero-cost) — rank by title+desc token overlap
+        prefiltered = _lexical_pre_filter(with_desc, parsed.bullets, top_n=prefilter_n)
+        # Pass 2: embed only the top candidates
+        to_embed = prefiltered[:max_embed]
+        logger.info("Embedding %d of %d prefiltered postings (%d skipped by pre-filter, %d without desc)",
+                     len(to_embed), len(with_desc),
+                     max(0, len(with_desc) - len(prefiltered)), len(without_desc))
         scored = await _compute_semantic_scores(resume_vec, to_embed)
-        # Remaining with-description postings are never embedded — score 0.
-        scored.extend((p, 0.0) for p in with_desc[MAX_EMBED_POSTINGS:])
+        # Remaining prefiltered postings that weren't embedded get 0
+        scored.extend((p, 0.0) for p in prefiltered[max_embed:])
         scored.sort(key=lambda t: t[1], reverse=True)
 
-        # Title-only postings (LinkedIn guest cards, some ATS boards) have no
-        # description to embed, so a flat 0.0 lets description-rich boards
-        # starve them out of the top-K entirely (§9.6). Rank them with a
-        # zero-token title-overlap score and reserve a few survivor slots.
+        # Title-only postings get lexical proxy score + reserved survivor slots
+        # Use expanded terms for broader matching
         title_scored = sorted(
-            ((p, _title_overlap_score(p, parsed.bullets)) for p in without_desc),
+            ((p, _title_overlap_score(p, parsed.bullets, expanded_terms=expanded_set)) for p in without_desc),
             key=lambda t: t[1], reverse=True,
         )
         top_k = _select_survivors(scored, title_scored, TOP_K_EMBEDDING_SURVIVORS)
@@ -680,6 +1099,10 @@ async def match_jobs(
         m = await _match_one(posting, parsed, resume_vec, semantic,
                              resume_graph=resume_graph, fresher_only=fresher_only)
         matches.append(m)
+
+    # 3b. Consolidate mass-postings (same role across multiple cities)
+    # Works on the JobMatch list by grouping on (title, company)
+    matches = _consolidate_mass_matches(matches)
 
     # 4. Location filter + re-rank
     matches = _apply_location_preference(matches, pref)

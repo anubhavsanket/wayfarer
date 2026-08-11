@@ -564,3 +564,179 @@ class TestLinkedinParsing:
         assert normalised[0].company == "Acme Corp"
         assert normalised[0].location == "Bengaluru, Karnataka"
         assert normalised[0].source == "linkedin_guest"
+
+
+# ---------------------------------------------------------------------------
+# City alias tests
+# ---------------------------------------------------------------------------
+
+class TestCityAliases:
+    """Test bidirectional city alias matching (Bangalore/Bengaluru, etc.)."""
+
+    def test_bangalore_matches_bengaluru(self):
+        """A posting from 'Bangalore' should match a user preference for 'Bengaluru'."""
+        from backend.app.services.job_matcher import _city_matches, _expand_cities
+        expanded = _expand_cities(["bengaluru"])
+        loc_tokens = {"bangalore", "karnataka", "india"}
+        assert any(_city_matches(loc_tokens, c) for c in expanded)
+
+    def test_bengaluru_matches_bangalore(self):
+        """Reverse direction: 'Bengaluru' matches 'Bangalore' posting."""
+        from backend.app.services.job_matcher import _city_matches, _expand_cities
+        expanded = _expand_cities(["bangalore"])
+        loc_tokens = {"bengaluru", "karnataka", "india"}
+        assert any(_city_matches(loc_tokens, c) for c in expanded)
+
+    def test_mumbai_matches_bombay(self):
+        """'Mumbai' matches 'Bombay' and vice versa."""
+        from backend.app.services.job_matcher import _city_matches, _expand_cities
+        expanded = _expand_cities(["mumbai"])
+        loc_tokens = {"bombay", "maharashtra", "india"}
+        assert any(_city_matches(loc_tokens, c) for c in expanded)
+
+    def test_nyc_matches_new_york(self):
+        """'NYC' matches 'New York' posting."""
+        from backend.app.services.job_matcher import _city_matches, _expand_cities
+        expanded = _expand_cities(["nyc"])
+        loc_tokens = {"new", "york", "ny", "usa"}
+        assert any(_city_matches(loc_tokens, c) for c in expanded)
+
+    def test_sf_matches_san_francisco(self):
+        """'SF' matches 'San Francisco' posting."""
+        from backend.app.services.job_matcher import _city_matches, _expand_cities
+        expanded = _expand_cities(["sf"])
+        loc_tokens = {"san", "francisco", "ca", "usa"}
+        assert any(_city_matches(loc_tokens, c) for c in expanded)
+
+    def test_unknown_city_no_false_positive(self):
+        """Unknown city should not match unrelated locations."""
+        from backend.app.services.job_matcher import _city_matches, _expand_cities
+        expanded = _expand_cities(["tokyo"])
+        loc_tokens = {"london", "uk"}
+        assert not any(_city_matches(loc_tokens, c) for c in expanded)
+
+
+# ---------------------------------------------------------------------------
+# Persistent dedup tests
+# ---------------------------------------------------------------------------
+
+class TestPersistentDedup:
+    """Test cross-request dedup via ContentHashCache."""
+
+    def test_dedupe_with_cache_marks_seen(self):
+        """Postings should be marked as seen in the cache after first pass."""
+        from backend.app.services.job_matcher import _dedupe_postings
+        from backend.app.utils.cache import ContentHashCache
+        import tempfile, shutil
+
+        tmpdir = tempfile.mkdtemp()
+        try:
+            cache = ContentHashCache("test_dedup", ttl_seconds=3600)
+            cache._dir = Path(tmpdir)
+            cache._path = Path(tmpdir) / "cache.json"
+
+            postings = [
+                JobPosting(
+                    id="test:1", source="test", title="Python Dev",
+                    company="Acme", url="https://example.com/1",
+                    fetched_at=datetime.datetime.now(datetime.timezone.utc),
+                ),
+                JobPosting(
+                    id="test:2", source="test", title="Python Dev",
+                    company="Acme", url="https://example.com/1",  # duplicate
+                    fetched_at=datetime.datetime.now(datetime.timezone.utc),
+                ),
+                JobPosting(
+                    id="test:3", source="test", title="Java Dev",
+                    company="Acme", url="https://example.com/2",
+                    fetched_at=datetime.datetime.now(datetime.timezone.utc),
+                ),
+            ]
+
+            result = _dedupe_postings(postings, cache=cache)
+            assert len(result) == 2  # duplicate removed
+
+            # Second call should dedup against cached entries
+            postings2 = [
+                JobPosting(
+                    id="test:4", source="test", title="Python Dev",
+                    company="Acme", url="https://example.com/1",  # seen before
+                    fetched_at=datetime.datetime.now(datetime.timezone.utc),
+                ),
+                JobPosting(
+                    id="test:5", source="test", title="Go Dev",
+                    company="Acme", url="https://example.com/3",
+                    fetched_at=datetime.datetime.now(datetime.timezone.utc),
+                ),
+            ]
+            result2 = _dedupe_postings(postings2, cache=cache)
+            assert len(result2) == 1  # only Go Dev is new
+            assert result2[0].title == "Go Dev"
+        finally:
+            shutil.rmtree(tmpdir, ignore_errors=True)
+
+    def test_dedupe_without_cache_still_works(self):
+        """Dedup should work without a cache (graceful fallback)."""
+        from backend.app.services.job_matcher import _dedupe_postings
+
+        postings = [
+            JobPosting(
+                id="test:1", source="test", title="Python Dev",
+                company="Acme", url="https://example.com/1",
+                fetched_at=datetime.datetime.now(datetime.timezone.utc),
+            ),
+            JobPosting(
+                id="test:2", source="test", title="Python Dev",
+                company="Acme", url="https://example.com/1",
+                fetched_at=datetime.datetime.now(datetime.timezone.utc),
+            ),
+        ]
+        result = _dedupe_postings(postings, cache=None)
+        assert len(result) == 1
+
+
+# ---------------------------------------------------------------------------
+# SSRF validation tests
+# ---------------------------------------------------------------------------
+
+class TestSSRFValidation:
+    """Test URL hostname validation for multi-company boards."""
+
+    def test_greenhouse_allowed_host(self):
+        """Greenhouse URL with allowed hostname should pass."""
+        from backend.app.models.job_boards import JobBoardConnector
+        connector = JobBoardConnector()
+        # Should not raise
+        connector._validate_url(
+            "https://boards-api.greenhouse.io/v1/boards/anthropic/jobs",
+            "greenhouse",
+        )
+
+    def test_greenhouse_blocked_host(self):
+        """Greenhouse URL with disallowed hostname should raise."""
+        from backend.app.models.job_boards import JobBoardConnector
+        connector = JobBoardConnector()
+        with pytest.raises(ValueError, match="blocked hostname"):
+            connector._validate_url(
+                "https://evil.example.com/v1/boards/anthropic/jobs",
+                "greenhouse",
+            )
+
+    def test_unknown_board_no_restriction(self):
+        """Boards without an allowlist should not be restricted."""
+        from backend.app.models.job_boards import JobBoardConnector
+        connector = JobBoardConnector()
+        # Should not raise (remoteok has no allowlist)
+        connector._validate_url(
+            "https://remoteok.com/api",
+            "remoteok",
+        )
+
+    def test_lever_allowed_host(self):
+        """Lever URL with allowed hostname should pass."""
+        from backend.app.models.job_boards import JobBoardConnector
+        connector = JobBoardConnector()
+        connector._validate_url(
+            "https://api.lever.co/v0/postings/anthropic",
+            "lever",
+        )

@@ -45,9 +45,12 @@ class Settings(BaseSettings):
     PROVIDER_RATE_LIMITS: dict = {
         "nvidia": {"requests": 10, "window": 60},
         "openrouter": {"requests": 30, "window": 60},
-        "ollama": {"requests": 60, "window": 60},
-        "lmstudio": {"requests": 60, "window": 60},
-        "custom": {"requests": 60, "window": 60},
+        # Ollama runs locally — no real rate limit. Set high enough to never
+        # block synthesis (60/60s was too low: 8 test queries × 6 ollama calls
+        # = 48 calls, and synthesis timed out at request #10).
+        "ollama": {"requests": 600, "window": 60},
+        "lmstudio": {"requests": 600, "window": 60},
+        "custom": {"requests": 600, "window": 60},
     }
 
     # ── Model selection (§12.5 — benchmarked per-tier) ────────────────
@@ -99,12 +102,12 @@ class Settings(BaseSettings):
         "simple": {
             "nvidia": "meta/llama-3.1-8b-instruct",
             "openrouter": "meta-llama/llama-3.1-8b-instruct",
-            "ollama": "qwen2.5:1.5b",
+            "ollama": "llama3.2:3b",  # fastest (16s), non-thinking, fits in 4GB VRAM
         },
         "complex": {
             "nvidia": "meta/llama-3.1-8b-instruct",
             "openrouter": "meta-llama/llama-3.1-8b-instruct",
-            "ollama": "qwen3:1.7b",
+            "ollama": "llama3.2:3b",  # thinking models return empty after tag stripping
         },
     }
 
@@ -134,11 +137,14 @@ class Settings(BaseSettings):
     DEFAULT_TOP_K: int = 5
     JOBS_SEMANTIC_WEIGHT: float = 0.7
     JOBS_KEYWORD_WEIGHT: float = 0.3
-    JOBS_TOP_K_EMBEDDING_SURVIVORS: int = 15
+    JOBS_TOP_K_EMBEDDING_SURVIVORS: int = 25  # increased from 15 — more survivors = better coverage
+    JOBS_MAX_EMBED_POSTINGS: int = 50  # max postings to embed (two-pass: lexical pre-filter → embed top N)
+    JOBS_LEXICAL_PREFILTER_TOP_N: int = 100  # lexical pre-filter keeps this many before embedding
 
     # ── Timeouts ────────────────────────────────────────────────────────
     REQUEST_TIMEOUT: int = 30
     RATE_LIMIT_BACKOFF: float = 1.5
+    SYNTHESIS_TIMEOUT: float = 90.0  # CPU inference queues when concurrent; 90s handles up to ~12 parallel requests
 
     # ── Performance ─────────────────────────────────────────────────────
     MAX_VRAM_GB: int = 4

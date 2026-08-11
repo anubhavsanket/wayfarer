@@ -1,11 +1,11 @@
-"""Stage 1 — Web Search Agent orchestration.
+"""Stage 1 - Web Search Agent orchestration.
 
-Pipeline (PRD §7):
-1. Decompose the natural-language query into 1–3 sub-queries (LLM, simple tier)
-2. Search each sub-query via Tavily → Brave fallback
+Pipeline (PRD section 7):
+1. Decompose the natural-language query into 1-3 sub-queries (skipped for trivial queries)
+2. Search each sub-query via Tavily -> Brave fallback
 3. Fetch + clean top-N pages via Crawl4AI (concurrency-capped), with graceful
    fallback to the search snippet when a fetch fails
-4. Cache fetched pages in ChromaDB ``search_cache`` keyed by URL hash + TTL
+4. Cache fetched pages in ChromaDB search_cache keyed by URL hash + TTL
 5. Synthesize an answer via the LLM router with inline citations
 
 Repeated identical queries within the TTL window return cached results
@@ -13,6 +13,7 @@ without re-fetching (FR1.5 / acceptance criterion #3).
 """
 from __future__ import annotations
 
+import asyncio
 import logging
 from datetime import datetime, timezone
 from typing import Any
@@ -35,7 +36,21 @@ def _query_cache_key(query: str) -> str:
 
 
 async def _decompose_query(query: str) -> list[str]:
-    """Decompose a multi-part/vague query into 1–3 searchable sub-queries."""
+    """Decompose a multi-part/vague query into 1-3 searchable sub-queries.
+
+    Skips the LLM call entirely for trivial queries (short, no question marks,
+    no comparison words) - decomposition is a waste of latency for "hello".
+    """
+    # Heuristic: skip decomposition for trivial queries - saves 1-3s per search
+    words = query.split()
+    is_trivial = (
+        len(words) <= 4
+        and "?" not in query
+        and not any(w in query.lower() for w in (" and ", " or ", " vs ", "compare"))
+    )
+    if is_trivial:
+        return [query.strip()]
+
     prompt = (
         "You decompose a user's search request into 1-3 focused search "
         "sub-queries. If the request is already simple and specific, return "
@@ -74,9 +89,9 @@ async def _dedupe_results(items: list[SearchResultItem]) -> list[SearchResultIte
 
 
 async def _fetch_and_cache(items: list[SearchResultItem]) -> dict[str, FetchResult]:
-    """Fetch top-N pages, storing fetched markdown in ChromaDB ``search_cache``.
+    """Fetch top-N pages, storing fetched markdown in ChromaDB search_cache.
 
-    Returns a map url → FetchResult. Pages already in the cache (within TTL)
+    Returns a map url -> FetchResult. Pages already in the cache (within TTL)
     are reused without re-fetching.
     """
     from ..vector_store import store
@@ -105,7 +120,7 @@ async def _fetch_and_cache(items: list[SearchResultItem]) -> dict[str, FetchResu
         if not doc:
             continue
         url = id_to_url.get(cid, "")
-        # Check TTL — skip stale entries
+        # Check TTL - skip stale entries
         fetched_at = meta.get("fetched_at") if isinstance(meta, dict) else None
         if fetched_at:
             try:
@@ -119,7 +134,7 @@ async def _fetch_and_cache(items: list[SearchResultItem]) -> dict[str, FetchResu
 
     to_fetch = [u for u in urls if u not in cached_hits]
     logger.info("Crawl4AI fetching %d/%d URLs (cache hit for %d)",
-                len(to_fetch), len(urls), len(urls) - len(to_fetch))
+                len(to_fetch), len(urls), len(urls) - len(cached_hits))
 
     # Fetch uncached pages
     if to_fetch:
@@ -166,20 +181,17 @@ async def _synthesize(
 ) -> tuple[str, list[Citation]]:
     """Synthesize an answer with inline citations via the LLM router.
 
-    Builds a compact context per source. Failed fetches fall back to the
-    search snippet (NFR1.3), so every source still contributes.
+    Uses the simple tier (qwen2.5:1.5b on Ollama) - the 1.5B model is
+    plenty capable for 2-4 sentence synthesis with citations, and the
+    complex tier (qwen3 thinking) takes 60-90s on CPU which risks
+    the 90s HTTP timeout.
     """
-    # Build sources list with id, url, title, and content. Per-source cap
-    # keeps the synthesis prompt compact so the LLM call completes well
-    # under the 90s timeout. Tavily snippets (~500 chars) are pre-summarized
-    # by the search provider and are preferred when substantial.
+    # Per-source cap keeps the synthesis prompt compact so the LLM
+    # call completes well under the timeout. Tavily snippets are
+    # pre-summarized by the search provider and are preferred.
     sources: list[dict[str, Any]] = []
     for i, item in enumerate(results, start=1):
         fr = fetched.get(item.url)
-        # Prefer Tavily snippet when it's substantial (>= 200 chars) — it's
-        # already a high-quality summary, so the LLM doesn't need the full
-        # markdown for synthesis. Fall back to markdown when the snippet is
-        # too short to be useful, then truncate aggressively.
         if item.snippet and len(item.snippet) >= 200:
             content = item.snippet
         elif fr and fr.success and fr.markdown.strip():
@@ -188,8 +200,8 @@ async def _synthesize(
             content = item.snippet or ""
         if not content:
             continue
-        if len(content) > 1200:
-            content = content[:1200] + "\n...[truncated]"
+        if len(content) > 200:  # aggressive cap - 3 sources = ~600 chars total, synthesis must complete in <50s on CPU
+            content = content[:200] + "..."
         sources.append({
             "id": i,
             "url": item.url,
@@ -201,37 +213,47 @@ async def _synthesize(
         return "No sources could be retrieved for this query.", []
 
     source_block = "\n\n".join(
-        f"[{s['id']}] {s['title']}\nURL: {s['url']}\n{s['content']}"
+        f"[{s['id']}] {s['title']}\n{s['content']}"
         for s in sources
     )
+    # Ultra-compact prompt for small models on CPU — must complete in <50s
     prompt = (
-        "You are a research assistant synthesizing an answer from web sources.\n\n"
-        "Requirements:\n"
-        "- Answer the user's query directly and concisely.\n"
-        "- Cite sources inline using bracketed numbers like [1], [2].\n"
-        "- Every factual claim must map to at least one citation.\n"
-        "- If sources conflict, say so briefly.\n"
-        "- Do NOT invent citations beyond the provided sources.\n\n"
-        f"USER QUERY: {query}\n\n"
-        f"SOURCES:\n{source_block}"
+        f"Answer concisely in 1-3 sentences with [1], [2] citations.\n"
+        f"Query: {query}\n"
+        f"Sources:\n{source_block}"
     )
-    resp = await router.chat(
-        messages=[{"role": "user", "content": prompt}],
-        tier="complex",
-        max_tokens=1024,
-    )
+    # Wrap in wait_for for explicit local timeout - fails fast
+    try:
+        resp = await asyncio.wait_for(
+            router.chat(
+                messages=[{"role": "user", "content": prompt}],
+                tier="simple",
+                max_tokens=200,  # tightened from 300 - 200 tokens is enough for 2-3 sentences
+            ),
+            timeout=settings.SYNTHESIS_TIMEOUT,
+        )
+    except asyncio.TimeoutError:
+        logger.warning("Synthesis timed out after %ss", settings.SYNTHESIS_TIMEOUT)
+        raise RuntimeError(f"Synthesis timed out after {settings.SYNTHESIS_TIMEOUT}s")
+
+    content = resp.get("content", "").strip()
+    if not content:
+        logger.warning("Synthesis returned empty content from provider=%s model=%s",
+                       resp.get("provider"), resp.get("model"))
+        raise RuntimeError("Synthesis returned empty content")
+
     citations = [
         Citation(id=s["id"], url=s["url"], title=s["title"], snippet=s["content"][:200])
         for s in sources
     ]
-    return resp["content"], citations
+    return content, citations
 
 
-async def search(query: str, max_sources: int = 5) -> SearchResponse:
-    """Run the full Stage 1 search pipeline and return a ``SearchResponse``."""
+async def search(query: str, max_sources: int = 2) -> SearchResponse:
+    """Run the full Stage 1 search pipeline and return a SearchResponse."""
     from ..vector_store import store
 
-    # 1. Cache check — repeated identical query within TTL returns cached answer
+    # 1. Cache check - repeated identical query within TTL returns cached answer
     cache_key = _query_cache_key(query)
     cached = store.get(SEARCH_CACHE_COLLECTION, [cache_key])
     if cached.get("documents") and cached["documents"][0]:
@@ -265,7 +287,7 @@ async def search(query: str, max_sources: int = 5) -> SearchResponse:
     all_items = await _dedupe_results(all_items)
     if not all_items:
         return SearchResponse(
-            answer="Search failed — no results could be retrieved. Check that "
+            answer="Search failed - no results could be retrieved. Check that "
                    "TAVILY_API_KEY (or BRAVE_API_KEY) is set.",
             citations=[],
             sub_queries_used=sub_queries,
@@ -293,12 +315,12 @@ async def search(query: str, max_sources: int = 5) -> SearchResponse:
         ]
         answer = (
             "LLM synthesis unavailable (all providers exhausted or rate-limited). "
-            "Here are the raw sources — you can read them directly:\n\n"
-            + "\n".join(f"[{c.id}] {c.title} — {c.url}" for c in citations)
+            "Here are the raw sources - you can read them directly:\n\n"
+            + "\n".join(f"[{c.id}] {c.title} - {c.url}" for c in citations)
         )
 
-    # 6. Cache the final answer (query hash → answer + sub-queries used)
-    # Skip caching fallback answers — they're not useful as cached results.
+    # 6. Cache the final answer (query hash -> answer + sub-queries used)
+    # Skip caching fallback answers - they're not useful as cached results.
     # Wrap in try/except: if Ollama isn't reachable for embedding, skip
     # caching rather than crashing the whole request.
     if synthesized:

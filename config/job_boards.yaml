@@ -169,11 +169,18 @@ job_boards:
   # ── Board-specific sources (target-list based) ────────────────────
   # These require knowing the company's board identifier.
   # Add your target companies below — each is a config change, not code.
+  #
+  # Multi-company boards (Greenhouse, Lever, Ashby) use company_slugs_env
+  # to expand a comma-separated env var into N parallel fetches.
+  # The url_template field provides the {slug} placeholder for each.
 
   - name: greenhouse
-    enabled: false  # Enable with GREENHOUSE_BOARD_TOKENS env var (comma-separated)
+    enabled: false  # Enable when GREENHOUSE_BOARD_TOKENS env var is set
     type: rest_api
-    base_url: "https://boards-api.greenhouse.io/v1/boards/{board_token}/jobs"
+    base_url: "https://boards-api.greenhouse.io/v1/boards/placeholder/jobs"
+    url_template: "https://boards-api.greenhouse.io/v1/boards/{slug}/jobs"
+    company_slugs_env: "GREENHOUSE_BOARD_TOKENS"
+    company_from_slug: true
     auth: none
     rate_limit_per_min: 30
     field_mapping:
@@ -187,13 +194,15 @@ job_boards:
       type: "none"
       param: ""
       max_pages: 1
-    # Note: requires GREENHOUSE_BOARD_TOKENS env var with comma-separated board tokens
-    # Example: GREENHOUSE_BOARD_TOKENS=anthropic,openai,google
+    # Example: GREENHOUSE_BOARD_TOKENS=anthropic,openai,vercel
 
   - name: lever
-    enabled: false  # Enable with LEVER_POSTING_URLS env var (comma-separated)
+    enabled: false  # Enable when LEVER_POSTING_URLS env var is set
     type: rest_api
-    base_url: "https://api.lever.co/v0/postings/{company}"
+    base_url: "https://api.lever.co/v0/postings/placeholder"
+    url_template: "https://api.lever.co/v0/postings/{slug}"
+    company_slugs_env: "LEVER_POSTING_URLS"
+    company_from_slug: true
     auth: none
     rate_limit_per_min: 30
     field_mapping:
@@ -207,7 +216,6 @@ job_boards:
       type: "none"
       param: ""
       max_pages: 1
-    # Note: requires LEVER_POSTING_URLS env var with comma-separated company slugs
     # Example: LEVER_POSTING_URLS=anthropic,stripe,airbnb
 
   - name: workday
@@ -231,26 +239,64 @@ job_boards:
       param: "offset"
       step: 20
       max_pages: 3
-    # Note: requires WORKDAY_URLS env var with comma-separated company/site paths
     # Example: WORKDAY_URLS=anthropic/jobs,google/jobs
 
   - name: ashby
-    enabled: false  # Enable with ASHBY_ORG env var
+    enabled: false  # Enable when ASHBY_ORG env var is set
     type: rest_api
-    base_url: "https://jobs.ashbyhq.com/api/non-user-graphql?op=ApiJobBoardWithTeams"
+    base_url: "https://api.ashbyhq.com/posting-api/job-board/placeholder?includeCompensation=true"
+    url_template: "https://api.ashbyhq.com/posting-api/job-board/{slug}?includeCompensation=true"
+    company_slugs_env: "ASHBY_ORG"
+    company_from_slug: true
     auth: none
-    rate_limit_per_min: 20
-    extra_params:
-      operationName: "ApiJobBoardWithTeams"
+    rate_limit_per_min: 10  # Ashby has ~10s server-side latency + rate limiting
+    fetch_timeout_override: 30  # Ashby needs longer timeout (career-ops pattern)
     field_mapping:
       id: "$.id"
       title: "$.title"
       company: "$.teamName"
       location: "$.locationName"
-      url: "$.id"
+      url: "$.jobUrl"
+      description: "$.description"
     pagination:
       type: "none"
       param: ""
       max_pages: 1
-    # Note: requires ASHBY_ORG env var with company slug
-    # Also requires custom query handling (GraphQL) — marked as experimental
+    # Ashby REST endpoint (not GraphQL). ~10s+ server-side latency.
+    # career-ops uses 30s timeout + 2 retries for this provider.
+    # Example: ASHBY_ORG=cohere,langchain,pinecone
+
+  # ── RSS/Atom feed sources ──────────────────────────────────────
+  # Boards that expose RSS feeds instead of JSON APIs.
+  # Adding an RSS source = a YAML entry, not code.
+
+  - name: ai_jobs_net
+    enabled: false  # Enable to scrape AI job boards via RSS
+    type: rss_feed
+    base_url: "https://ai-jobs.net/feed/"
+    auth: none
+    rate_limit_per_min: 20
+    field_mapping:
+      title: "$.title"
+      url: "$.link"
+      description: "$.description"
+    pagination:
+      type: "none"
+      param: ""
+      max_pages: 1
+
+  - name: remoteok_rss
+    enabled: false  # Enable for RSS fallback when REST API is rate-limited
+    type: rss_feed
+    base_url: "https://remoteok.com/remote-jobs.rss"
+    auth: none
+    rate_limit_per_min: 20
+    default_remote_type: "remote"
+    field_mapping:
+      title: "$.title"
+      url: "$.link"
+      description: "$.description"
+    pagination:
+      type: "none"
+      param: ""
+      max_pages: 1

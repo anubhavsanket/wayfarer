@@ -18,7 +18,7 @@ export interface ApiSettings {
 }
 
 const DEFAULTS: ApiSettings = {
-  llm_provider: "nvidia",
+  llm_provider: "ollama",
   nvidia_api_key: "",
   nvidia_endpoint: "https://integrate.api.nvidia.com/v1",
   openrouter_api_key: "",

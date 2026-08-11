@@ -154,6 +154,10 @@ class JobMatch(BaseModel):
     experience_level: ExperienceLevel = ExperienceLevel.UNCLEAR
     min_experience_years: float | None = None
     employment_type: EmploymentType = EmploymentType.UNCLEAR
+    also_available_in: list[str] = Field(
+        default_factory=list,
+        description="Other cities where this same role is posted (mass-posting consolidation)",
+    )
 
 
 class AggregateGap(BaseModel):

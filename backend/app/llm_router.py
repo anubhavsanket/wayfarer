@@ -137,31 +137,46 @@ class LLMRouter:
         if not provider and ov.llm_provider:
             provider = ov.llm_provider
 
-        # If a specific provider is requested, only try it
-        candidates = (provider,) if provider else self.providers
+        # If a specific provider is requested, try it first then fall back to all
+        if provider:
+            candidates = (provider,) + tuple(p for p in self.providers if p != provider)
+        else:
+            candidates = self.providers
         last_error: Exception | None = None
 
         for prov in candidates:
             resolved_model = model or self._model_for(prov, tier)
             if not self._provider_available(prov, resolved_model):
-                logger.debug("Provider %s skipped (no API key / model)", prov)
+                logger.warning("Router: provider %s skipped (model=%s available=%s)",
+                               prov, resolved_model, self._provider_available(prov, resolved_model))
                 continue
 
             # Wait for a rate-limit slot before hitting the provider
             if not await self._acquire_slot(prov):
-                logger.warning("Provider %s rate-limited locally, skipping", prov)
+                logger.warning("Router: provider %s rate-limited locally, skipping", prov)
                 continue
 
+            logger.info("Router: calling provider=%s model=%s", prov, resolved_model)
             try:
                 # §12.3: Activate prompt caching if enabled globally
                 effective_cache = cache_control or settings.ENABLE_PROMPT_CACHING
-                return await self._call_provider(
+                logger.debug(f"Router: trying provider={prov} model={resolved_model}")
+                result = await self._call_provider(
                     prov, resolved_model, messages,
                     max_tokens=max_tokens,
                     temperature=temperature,
                     cache_control=effective_cache,
                     json_mode=json_mode,
                 )
+                # Validate result has non-empty content
+                if not result.get("content", "").strip():
+                    logger.warning(
+                        "Provider %s returned empty content — trying next",
+                        prov,
+                    )
+                    last_error = RuntimeError(f"{prov} returned empty content")
+                    continue
+                return result
             except (httpx.HTTPStatusError, httpx.TimeoutException, httpx.TransportError) as exc:
                 last_error = exc
                 status = getattr(exc, "response", None)
@@ -185,23 +200,31 @@ class LLMRouter:
         )
 
     async def embed(self, text: str) -> list[float]:
-        """Embed text locally via Ollama (nomic-embed-text)."""
+        """Embed text locally via Ollama (nomic-embed-text) with retry."""
         from .main import get_overrides
         ov = get_overrides()
         endpoint = ov.ollama_endpoint or settings.OLLAMA_ENDPOINT
         url = f"{endpoint}/api/embeddings"
-        try:
-            # Embedding calls use a longer timeout — Ollama can take 30s+
-            # to load a model on cold start, then it's fast.
-            resp = await self._client.post(
-                url,
-                json={"model": settings.EMBEDDING_MODEL, "prompt": text},
-                timeout=httpx.Timeout(120.0),
-            )
-            resp.raise_for_status()
-            return resp.json()["embedding"]
-        except Exception as exc:
-            raise RuntimeError(f"Embedding failed via {url}: {exc}") from exc
+        max_retries = 3
+        for attempt in range(max_retries):
+            try:
+                # Embedding calls use a longer timeout — Ollama can take 30s+
+                # to load a model on cold start, then it's fast.
+                resp = await self._client.post(
+                    url,
+                    json={"model": settings.EMBEDDING_MODEL, "prompt": text},
+                    timeout=httpx.Timeout(120.0),
+                )
+                resp.raise_for_status()
+                return resp.json()["embedding"]
+            except Exception as exc:
+                if attempt < max_retries - 1:
+                    wait = 1.0 * (2 ** attempt) + random.uniform(0, 0.5)
+                    logger.warning("Embedding attempt %d/%d failed: %s — retrying in %.1fs",
+                                   attempt + 1, max_retries, exc, wait)
+                    await asyncio.sleep(wait)
+                else:
+                    raise RuntimeError(f"Embedding failed after {max_retries} attempts via {url}: {exc}") from exc
 
     async def aclose(self) -> None:
         await self._client.aclose()
@@ -243,8 +266,20 @@ class LLMRouter:
         return True
 
     async def _acquire_slot(self, provider: str) -> bool:
-        """Wait up to the window for a rate-limit slot. Returns True if granted."""
+        """Check rate-limit slot. Returns True if granted, False immediately if full.
+
+        For local providers (ollama, lmstudio), never blocks — skips immediately
+        if the bucket is full. This prevents asyncio.CancelledError from the
+        synthesis timeout propagating through the router uncaught.
+        """
         bucket = self._buckets[provider]
+        if provider in ("ollama", "lmstudio", "custom"):
+            # Local providers — never block, skip immediately if full
+            if bucket.allow():
+                bucket.record()
+                return True
+            return False
+        # Remote providers — wait up to the window for a slot
         deadline = time.monotonic() + bucket.window_seconds
         while time.monotonic() < deadline:
             if bucket.allow():
@@ -368,8 +403,12 @@ class LLMRouter:
         )
         resp.raise_for_status()
         data = resp.json()
+        content = data["message"]["content"]
+        # Strip <think>...</think>` tags (qwen3 thinking tokens) so the model's reasoning is hidden from the user
+        if "<think>" in content:
+            content = re.sub(r"<think>.*?</think>\s*", "", content, flags=re.DOTALL).strip()
         return {
-            "content": data["message"]["content"],
+            "content": content,
             "provider": "ollama",
             "model": model,
             "cached": False,
