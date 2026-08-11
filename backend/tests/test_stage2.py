@@ -159,6 +159,17 @@ def test_ats_score_changes_with_structural_fix():
     assert degraded_score < perfect_score
     assert degraded_score >= 0.0
 
+    # Severity weighting: high issues penalize more than medium
+    parsed.structural_issues = [
+        StructuralIssue(location="x", issue="y", severity="high"),
+        StructuralIssue(location="x", issue="y", severity="medium"),
+        StructuralIssue(location="x", issue="y", severity="low"),
+    ]
+    weighted_score = _compute_ats_score(parsed, gaps)
+    # high=0.20, medium=0.10, low=0.05 → total penalty = 0.35
+    expected = round(0.4 * (1.0 - 0.35) + 0.6 * 1.0, 3)
+    assert weighted_score == expected
+
 
 def test_ats_score_drops_with_more_gaps():
     from backend.app.services.ats_checker import _compute_ats_score

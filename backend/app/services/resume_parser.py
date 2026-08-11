@@ -22,7 +22,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-from ..models.schemas import StructuralIssue
+from ..models.schemas import StructuralIssue, StructuralIssueType, StructuralIssueType, StructuralIssueType, StructuralIssueType, StructuralIssueType, StructuralIssueType, StructuralIssueType, StructuralIssueType, StructuralIssueType, StructuralIssueType, StructuralIssueType
 
 logger = logging.getLogger(__name__)
 
@@ -257,8 +257,135 @@ def _detect_structural_issues(
                         f"Table header '{header}' not visible in ATS text — "
                         f"table structure may be lost by ATS parsers"
                     ),
+                    type=StructuralIssueType.TABLE_LOSS,
+                    severity="medium",
+                    suggestion="Convert tables to bullet-point lists for better ATS compatibility.",
                 ))
     return issues
+
+
+# ---------------------------------------------------------------------------
+# Enhanced structural checks
+# ---------------------------------------------------------------------------
+
+# Standard section order — earlier = higher priority
+_SECTION_ORDER = [
+    "contact", "summary", "experience", "education",
+    "skills", "projects", "certifications", "publications", "awards",
+]
+
+
+def _check_missing_sections(sections: dict[str, list[str]]) -> list[StructuralIssue]:
+    """Flag critical sections that are missing from the resume."""
+    issues: list[StructuralIssue] = []
+    section_keys = set(sections.keys())
+
+    if "experience" not in section_keys and "projects" not in section_keys:
+        issues.append(StructuralIssue(
+            location="resume structure",
+            issue="No 'Experience' or 'Projects' section found — ATS parsers may not recognize your work history.",
+            type=StructuralIssueType.MISSING_SECTION,
+            severity="high",
+            suggestion="Add an 'Experience' section with your work history and bullet-pointed achievements.",
+        ))
+
+    if "education" not in section_keys:
+        issues.append(StructuralIssue(
+            location="resume structure",
+            issue="No 'Education' section found — many roles require a degree or formal qualifications.",
+            type=StructuralIssueType.MISSING_SECTION,
+            severity="high",
+            suggestion="Add an 'Education' section with your degree, institution, and graduation year.",
+        ))
+
+    if "skills" not in section_keys:
+        issues.append(StructuralIssue(
+            location="resume structure",
+            issue="No 'Skills' section found — ATS parsers rely on this section for keyword matching.",
+            type=StructuralIssueType.MISSING_SECTION,
+            severity="medium",
+            suggestion="Add a 'Skills' section listing your technical skills, tools, and certifications.",
+        ))
+
+    return issues
+
+
+def _check_section_order(sections: dict[str, list[str]]) -> list[StructuralIssue]:
+    """Validate section ordering follows standard resume conventions."""
+    issues: list[StructuralIssue] = []
+    present_order = [s for s in _SECTION_ORDER if s in sections]
+
+    for i in range(len(present_order)):
+        for j in range(i + 1, len(present_order)):
+            # If a higher-priority section appears after a lower-priority one
+            if _SECTION_ORDER.index(present_order[i]) > _SECTION_ORDER.index(present_order[j]):
+                issues.append(StructuralIssue(
+                    location="section order",
+                    issue=(
+                        f"'{present_order[i].title()}' appears before '{present_order[j].title()}' — "
+                        f"standard order is {present_order[j].title()} first."
+                    ),
+                    type=StructuralIssueType.SECTION_ORDER,
+                    severity="low",
+                    suggestion=f"Move '{present_order[j].title()}' before '{present_order[i].title()}' for better readability.",
+                ))
+                break  # Only flag the first out-of-order pair per section
+
+    return issues
+
+
+def _check_contact_completeness(contact: dict[str, str]) -> list[StructuralIssue]:
+    """Check that essential contact information is present."""
+    issues: list[StructuralIssue] = []
+
+    if not contact.get("email"):
+        issues.append(StructuralIssue(
+            location="contact info",
+            issue="No email address found — recruiters cannot contact you without one.",
+            type=StructuralIssueType.CONTACT_INCOMPLETE,
+            severity="high",
+            suggestion="Add your email address at the top of your resume.",
+        ))
+
+    if not contact.get("phone"):
+        issues.append(StructuralIssue(
+            location="contact info",
+            issue="No phone number found — some employers require a phone number.",
+            type=StructuralIssueType.CONTACT_INCOMPLETE,
+            severity="medium",
+            suggestion="Add your phone number in the contact section.",
+        ))
+
+    if not contact.get("linkedin"):
+        issues.append(StructuralIssue(
+            location="contact info",
+            issue="No LinkedIn profile found — a LinkedIn link is expected for professional roles.",
+            type=StructuralIssueType.CONTACT_INCOMPLETE,
+            severity="low",
+            suggestion="Add your LinkedIn profile URL to the contact section.",
+        ))
+
+    return issues
+
+
+def _check_resume_length(raw_text: str) -> list[StructuralIssue]:
+    """Flag resumes that are excessively long."""
+    word_count = len(raw_text.split())
+    # ~250 words per page for a typical resume
+    pages_est = word_count / 250
+
+    if pages_est > 3:
+        return [StructuralIssue(
+            location="resume length",
+            issue=(
+                f"Resume is approximately {pages_est:.0f} pages — "
+                f"most ATS systems and recruiters prefer 1-2 pages."
+            ),
+            type=StructuralIssueType.TOO_LONG,
+            severity="medium",
+            suggestion="Condense to 1-2 pages by removing older or less relevant experience.",
+        )]
+    return []
 
 
 # ---------------------------------------------------------------------------
@@ -416,6 +543,12 @@ def parse_resume(file_path: str | Path) -> ParsedResume:
         )
 
     contact = _extract_contact(raw_lines)
+
+    # Additional structural checks (order matters — section checks need sections)
+    structural_issues.extend(_check_missing_sections(sections))
+    structural_issues.extend(_check_section_order(sections))
+    structural_issues.extend(_check_contact_completeness(contact))
+    structural_issues.extend(_check_resume_length(raw_text))
 
     return ParsedResume(
         sections=sections,

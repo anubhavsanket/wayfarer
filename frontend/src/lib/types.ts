@@ -37,6 +37,9 @@ export interface SearchResponse {
 export interface StructuralIssue {
   location: string;
   issue: string;
+  type?: string;
+  severity?: "high" | "medium" | "low";
+  suggestion?: string | null;
 }
 
 export interface KeywordGap {

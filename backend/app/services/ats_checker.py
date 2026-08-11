@@ -134,8 +134,13 @@ def _compute_ats_score(
     keywords are extracted (e.g. the JD is very short or non-technical),
     the score is capped to avoid misleading 100% results on 1 keyword.
     """
-    # Structural component — each unresolved structural issue costs 0.15
-    structural_score = max(0.0, 1.0 - 0.15 * len(parsed.structural_issues))
+    # Structural component — severity-weighted penalty per issue
+    severity_weights = {"high": 0.20, "medium": 0.10, "low": 0.05}
+    structural_penalty = sum(
+        severity_weights.get(getattr(i, "severity", "medium"), 0.10)
+        for i in parsed.structural_issues
+    )
+    structural_score = max(0.0, 1.0 - structural_penalty)
 
     # Keyword coverage on ATS-visible text only
     if keyword_gaps:

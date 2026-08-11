@@ -53,9 +53,20 @@ class SearchResponse(BaseModel):
 
 # ---------- Stage 2: Resume / ATS ----------
 
+class StructuralIssueType(str, Enum):
+    TABLE_LOSS = "table_loss"
+    MISSING_SECTION = "missing_section"
+    SECTION_ORDER = "section_order"
+    CONTACT_INCOMPLETE = "contact_incomplete"
+    TOO_LONG = "too_long"
+
+
 class StructuralIssue(BaseModel):
     location: str
     issue: str
+    type: StructuralIssueType = StructuralIssueType.TABLE_LOSS
+    severity: Literal["high", "medium", "low"] = "medium"
+    suggestion: str | None = None
 
 
 class KeywordGap(BaseModel):

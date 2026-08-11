@@ -181,15 +181,42 @@ export default function ResumeCheckPage() {
           {result.structural_issues.length > 0 && (
             <Card className="p-6">
               <Sticker variant="ink" className="mb-3">Structural Issues</Sticker>
-              <ul className="space-y-1 text-sm">
-                {result.structural_issues.map((issue, i) => (
-                  <li key={i} className="flex gap-3">
-                    <Sticker variant="muted" className="shrink-0">
-                      {issue.location}
-                    </Sticker>
-                    <span className="leading-relaxed">{issue.issue}</span>
-                  </li>
-                ))}
+              <ul className="space-y-3 text-sm">
+                {result.structural_issues.map((issue, i) => {
+                  const severityColor = issue.severity === "high"
+                    ? "text-red-400"
+                    : issue.severity === "medium"
+                    ? "text-orange-400"
+                    : "text-green-400";
+                  const severityBg = issue.severity === "high"
+                    ? "bg-red-400/10"
+                    : issue.severity === "medium"
+                    ? "bg-orange-400/10"
+                    : "bg-green-400/10";
+                  const typeLabel = issue.type
+                    ? issue.type.replace(/_/g, " ").replace(/\b\w/g, (c: string) => c.toUpperCase())
+                    : issue.location;
+                  return (
+                    <li key={i} className="rounded-lg border border-white/10 p-3">
+                      <div className="mb-1 flex items-center gap-2 flex-wrap">
+                        <Sticker variant="muted" className="shrink-0">
+                          {typeLabel}
+                        </Sticker>
+                        {issue.severity && (
+                          <span className={`text-xs font-medium px-2 py-0.5 rounded ${severityBg} ${severityColor}`}>
+                            {issue.severity.toUpperCase()}
+                          </span>
+                        )}
+                      </div>
+                      <p className="leading-relaxed mb-1">{issue.issue}</p>
+                      {issue.suggestion && (
+                        <p className="text-xs text-zinc-400 italic">
+                          Suggestion: {issue.suggestion}
+                        </p>
+                      )}
+                    </li>
+                  );
+                })}
               </ul>
             </Card>
           )}
