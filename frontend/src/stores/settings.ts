@@ -11,6 +11,9 @@ export interface ApiSettings {
   ollama_endpoint: string;
   lmstudio_endpoint: string;
   lmstudio_model: string;
+  custom_llm_endpoint: string;
+  custom_llm_api_key: string;
+  custom_llm_model: string;
   tavily_api_key: string;
   brave_api_key: string;
   bluedoor_api_key: string;
@@ -25,6 +28,9 @@ const DEFAULTS: ApiSettings = {
   ollama_endpoint: "http://ollama:11434",
   lmstudio_endpoint: "http://localhost:1234/v1",
   lmstudio_model: "",
+  custom_llm_endpoint: "",
+  custom_llm_api_key: "",
+  custom_llm_model: "",
   tavily_api_key: "",
   brave_api_key: "",
   bluedoor_api_key: "",
@@ -75,6 +81,9 @@ export function buildAuthHeaders(): Record<string, string> {
   if (s.ollama_endpoint) headers["X-Ollama-Endpoint"] = s.ollama_endpoint;
   if (s.lmstudio_endpoint) headers["X-LMStudio-Endpoint"] = s.lmstudio_endpoint;
   if (s.lmstudio_model) headers["X-LMStudio-Model"] = s.lmstudio_model;
+  if (s.custom_llm_endpoint) headers["X-Custom-Endpoint"] = s.custom_llm_endpoint;
+  if (s.custom_llm_api_key) headers["X-Custom-API-Key"] = s.custom_llm_api_key;
+  if (s.custom_llm_model) headers["X-Custom-Model"] = s.custom_llm_model;
   if (s.tavily_api_key) headers["X-Tavily-API-Key"] = s.tavily_api_key;
   if (s.brave_api_key) headers["X-Brave-API-Key"] = s.brave_api_key;
   if (s.bluedoor_api_key) headers["X-Bluedoor-API-Key"] = s.bluedoor_api_key;

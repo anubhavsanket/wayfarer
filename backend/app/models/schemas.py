@@ -78,6 +78,8 @@ class ResumeCheckResponse(BaseModel):
 class AcceptedSuggestion(BaseModel):
     bullet_id: str
     suggested_text: str
+    original_text: str | None = None
+    author: str = "Wayfarer"
 
 
 class SaveMode(str, Enum):
@@ -90,12 +92,23 @@ class ResumeSaveRequest(BaseModel):
     accepted_suggestions: list[AcceptedSuggestion]
     mode: SaveMode
     confirm_overwrite: bool = False
+    author: str = "Wayfarer"
+
+
+class ChangeSummary(BaseModel):
+    """Summary of track-changes applied to a saved document."""
+    total_changes: int
+    insertions: int
+    deletions: int
+    accepted_count: int
+    rejected_count: int
 
 
 class ResumeSaveResponse(BaseModel):
     file_id: str
     file_ref: str
     mode_applied: SaveMode
+    changes: ChangeSummary | None = None
 
 
 # ---------- Stage 3: Job matching ----------

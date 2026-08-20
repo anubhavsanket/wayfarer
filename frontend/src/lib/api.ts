@@ -35,15 +35,26 @@ export const api = {
     }),
 
   // Stage 2 — Resume check
-  resumeCheck: (resumeFile: File, jdText: string) => {
+  resumeCheck: (jdText: string, resumeFile?: File, resumeId?: string) => {
     const form = new FormData();
-    form.append("resume_file", resumeFile);
+    if (resumeFile) {
+      form.append("resume_file", resumeFile);
+    } else if (resumeId) {
+      form.append("resume_id", resumeId);
+    }
     form.append("jd_text", jdText);
     return fetch(`${API_BASE}/api/v1/resume/check`, {
       method: "POST",
       headers: buildAuthHeaders(),
       body: form,
-    }).then((r) => r.json() as Promise<ResumeCheckResponse>);
+    }).then((r) => {
+      if (!r.ok) {
+        return r.text().then((t) => {
+          throw new Error(`API error ${r.status}: ${t}`);
+        });
+      }
+      return r.json() as Promise<ResumeCheckResponse>;
+    });
   },
 
   // Stage 3 — Job matching

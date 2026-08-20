@@ -24,7 +24,7 @@ function ResumeUploadCard() {
   );
 
   const mutation = useMutation({
-    mutationFn: (file: File) => api.resumeCheck(file, "placeholder"),
+    mutationFn: (file: File) => api.resumeCheck("placeholder", file),
     onSuccess: (data) => {
       setStoredResumeId(data.resume_id);
       setStoredFileName(resumeFile?.name ?? "");
@@ -200,14 +200,14 @@ export default function SettingsPage() {
 
           {settings.llm_provider === "custom" && (
             <>
-              <Field label="Custom Endpoint" value={settings.lmstudio_endpoint}
-                onChange={(v) => update({ lmstudio_endpoint: v })}
+              <Field label="Custom Endpoint" value={settings.custom_llm_endpoint}
+                onChange={(v) => update({ custom_llm_endpoint: v })}
                 placeholder="http://localhost:8080/v1" />
-              <Field label="API Key" value={settings.openrouter_api_key}
-                onChange={(v) => update({ openrouter_api_key: v })}
+              <Field label="API Key" value={settings.custom_llm_api_key}
+                onChange={(v) => update({ custom_llm_api_key: v })}
                 placeholder="any string" type="password" />
-              <Field label="Model Name" value={settings.lmstudio_model}
-                onChange={(v) => update({ lmstudio_model: v })}
+              <Field label="Model Name" value={settings.custom_llm_model}
+                onChange={(v) => update({ custom_llm_model: v })}
                 placeholder="e.g. your-model-name" />
             </>
           )}

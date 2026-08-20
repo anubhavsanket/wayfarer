@@ -35,6 +35,7 @@ from typing import Any
 import httpx
 
 from .config import settings
+from .context import get_request_overrides
 
 logger = logging.getLogger(__name__)
 
@@ -120,19 +121,35 @@ class LLMRouter:
         cache_control: bool = False,
         json_mode: bool = False,
         provider: str | None = None,
+        model: str | None = None,
     ) -> dict[str, Any]:
         """Send a chat request, failing over across providers.
+
+        ``model`` optionally overrides the per-tier model selection, letting
+        callers target a specific model (e.g. a small local classifer like
+        qwen3:0.6b). Credential/availability gating still applies — a provider
+        without its API key is skipped even when ``model`` is explicit.
 
         Returns {"content": str, "provider": str, "model": str, "cached": bool}.
         Raises RuntimeError if every provider is exhausted.
         """
-        # If a specific provider is requested, only try it
-        candidates = (provider,) if provider else self.providers
+        # Determine candidates: header override -> explicit provider -> configured default
+        overrides = get_request_overrides()
+        primary_provider = provider or (overrides.llm_provider if overrides and overrides.llm_provider else settings.LLM_PROVIDER)
+        if primary_provider not in self.PROVIDER_ORDER:
+            primary_provider = settings.LLM_PROVIDER
+
+        if provider:
+            candidates = (provider,)
+        else:
+            fallbacks = [p for p in self.PROVIDER_ORDER if p != primary_provider]
+            candidates = (primary_provider, *fallbacks)
+
         last_error: Exception | None = None
 
         for prov in candidates:
-            model = self._model_for(prov, tier)
-            if not self._provider_available(prov, model):
+            resolved_model = self._model_for(prov, tier, model)
+            if not self._provider_available(prov, resolved_model):
                 logger.debug("Provider %s skipped (no API key / model)", prov)
                 continue
 
@@ -143,7 +160,7 @@ class LLMRouter:
 
             try:
                 return await self._call_provider(
-                    prov, model, messages,
+                    prov, resolved_model, messages,
                     max_tokens=max_tokens,
                     temperature=temperature,
                     cache_control=cache_control,
@@ -173,7 +190,9 @@ class LLMRouter:
 
     async def embed(self, text: str) -> list[float]:
         """Embed text locally via Ollama (nomic-embed-text)."""
-        url = f"{settings.OLLAMA_ENDPOINT}/api/embeddings"
+        overrides = get_request_overrides()
+        ollama_endpoint = (overrides.ollama_endpoint if overrides and overrides.ollama_endpoint else settings.OLLAMA_ENDPOINT)
+        url = f"{ollama_endpoint.rstrip('/')}/api/embeddings"
         try:
             # Embedding calls use a longer timeout — Ollama can take 30s+
             # to load a model on cold start, then it's fast.
@@ -192,22 +211,41 @@ class LLMRouter:
 
     # -- internals ----------------------------------------------------------
 
-    def _model_for(self, provider: str, tier: str) -> str | None:
-        """Resolve the model for a provider+tier, or None if unavailable."""
-        # For lmstudio / custom, use the explicit model name from settings
+    def _model_for(self, provider: str, tier: str, override: str | None = None) -> str | None:
+        """Resolve the model for a provider+tier, or None if unavailable.
+
+        ``override`` lets callers pin a specific model. Credential gating still
+        applies: nvidia/openrouter without an API key resolve to None even with
+        an override (so the router can't loop a paid provider we have no key for).
+        """
+        overrides = get_request_overrides()
+        nvidia_key = (overrides.nvidia_api_key if overrides and overrides.nvidia_api_key else settings.NVIDIA_NIM_API_KEY)
+        openrouter_key = (overrides.openrouter_api_key if overrides and overrides.openrouter_api_key else settings.OPENROUTER_API_KEY)
+        lmstudio_model = (overrides.lmstudio_model if overrides and overrides.lmstudio_model else settings.LMSTUDIO_MODEL)
+        custom_model = (overrides.custom_model if overrides and overrides.custom_model else settings.CUSTOM_LLM_MODEL)
+
+        # Explicit model override: only enforce provider credentials
+        if override:
+            if provider == "nvidia" and not nvidia_key:
+                return None
+            if provider == "openrouter" and not openrouter_key:
+                return None
+            return override
+
+        # For lmstudio / custom, use the explicit model name from settings/overrides
         if provider == "lmstudio":
-            return settings.LMSTUDIO_MODEL or None
+            return lmstudio_model or None
         if provider == "custom":
-            return settings.CUSTOM_LLM_MODEL or None
+            return custom_model or None
 
         tier_models = settings.LLM_MODELS.get(tier, settings.LLM_MODELS["simple"])
         model = tier_models.get(provider)
         if not model:
             return None
         # Check the provider has credentials configured
-        if provider == "nvidia" and not settings.NVIDIA_NIM_API_KEY:
+        if provider == "nvidia" and not nvidia_key:
             return None
-        if provider == "openrouter" and not settings.OPENROUTER_API_KEY:
+        if provider == "openrouter" and not openrouter_key:
             return None
         return model
 
@@ -264,22 +302,24 @@ class LLMRouter:
         cache_control: bool,
         json_mode: bool,
     ) -> dict[str, Any]:
+        overrides = get_request_overrides()
+
         # Resolve endpoint and API key per provider
         if provider == "nvidia":
-            endpoint = settings.NVIDIA_NIM_ENDPOINT
-            api_key = settings.NVIDIA_NIM_API_KEY
+            endpoint = (overrides.nvidia_endpoint if overrides and overrides.nvidia_endpoint else settings.NVIDIA_NIM_ENDPOINT)
+            api_key = (overrides.nvidia_api_key if overrides and overrides.nvidia_api_key else settings.NVIDIA_NIM_API_KEY)
         elif provider == "openrouter":
-            endpoint = settings.OPENROUTER_ENDPOINT
-            api_key = settings.OPENROUTER_API_KEY
+            endpoint = (overrides.openrouter_endpoint if overrides and overrides.openrouter_endpoint else settings.OPENROUTER_ENDPOINT)
+            api_key = (overrides.openrouter_api_key if overrides and overrides.openrouter_api_key else settings.OPENROUTER_API_KEY)
         elif provider == "lmstudio":
-            endpoint = settings.LMSTUDIO_ENDPOINT
+            endpoint = (overrides.lmstudio_endpoint if overrides and overrides.lmstudio_endpoint else settings.LMSTUDIO_ENDPOINT)
             api_key = settings.LMSTUDIO_API_KEY
         elif provider == "custom":
-            endpoint = settings.CUSTOM_LLM_ENDPOINT
-            api_key = settings.CUSTOM_LLM_API_KEY
+            endpoint = (overrides.custom_endpoint if overrides and overrides.custom_endpoint else settings.CUSTOM_LLM_ENDPOINT)
+            api_key = (overrides.custom_api_key if overrides and overrides.custom_api_key else settings.CUSTOM_LLM_API_KEY)
         else:
-            endpoint = settings.NVIDIA_NIM_ENDPOINT
-            api_key = settings.NVIDIA_NIM_API_KEY
+            endpoint = (overrides.nvidia_endpoint if overrides and overrides.nvidia_endpoint else settings.NVIDIA_NIM_ENDPOINT)
+            api_key = (overrides.nvidia_api_key if overrides and overrides.nvidia_api_key else settings.NVIDIA_NIM_API_KEY)
         url = f"{endpoint.rstrip('/')}/chat/completions"
 
         payload: dict[str, Any] = {
@@ -314,7 +354,9 @@ class LLMRouter:
         max_tokens: int,
         temperature: float,
     ) -> dict[str, Any]:
-        url = f"{settings.OLLAMA_ENDPOINT}/api/chat"
+        overrides = get_request_overrides()
+        ollama_endpoint = (overrides.ollama_endpoint if overrides and overrides.ollama_endpoint else settings.OLLAMA_ENDPOINT)
+        url = f"{ollama_endpoint.rstrip('/')}/api/chat"
         resp = await self._client.post(
             url,
             json={

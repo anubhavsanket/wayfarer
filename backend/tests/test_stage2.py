@@ -87,6 +87,23 @@ def tmp_resume_simple(tmp_path):
     return path
 
 
+@pytest.fixture
+def stored_resume(tmp_resume_simple):
+    """A resume persisted via the Settings flow (store_upload + save_parsed).
+
+    Mirrors what happens when a user uploads their main resume in the
+    Settings tab: an original file + parsed.json live under
+    ``data/uploads/{resume_id}/``.
+    """
+    from backend.app.services.resume_store import store_upload, save_parsed
+    from backend.app.services.resume_parser import parse_resume
+
+    parsed = parse_resume(str(tmp_resume_simple))
+    resume_id, _ = store_upload(tmp_resume_simple.read_bytes(), tmp_resume_simple.name)
+    save_parsed(resume_id, parsed)
+    return resume_id
+
+
 # ---------------------------------------------------------------------------
 # Resume parser (PRD §8.5 acceptance criterion #1)
 # ---------------------------------------------------------------------------
@@ -282,3 +299,89 @@ def test_resume_check_with_docx(client, tmp_resume_simple):
     # Every suggestion must carry a tier
     for gap in data["keyword_gaps"]:
         assert gap["tier"] in ("verified", "reworded", "gap")
+
+
+# ---------------------------------------------------------------------------
+# Resume check — "Use Stored Resume" path (resume_id instead of upload)
+# ---------------------------------------------------------------------------
+
+def test_resume_check_with_stored_resume_id(client, stored_resume):
+    """Check using only resume_id — no file upload — returns the same id."""
+    resp = client.post(
+        "/api/v1/resume/check",
+        data={"resume_id": stored_resume, "jd_text": "Python developer with FastAPI"},
+    )
+    assert resp.status_code == 200, resp.text
+    data = resp.json()
+    assert data["resume_id"] == stored_resume
+    assert "ats_score" in data
+    assert "keyword_gaps" in data
+    # The parsed resume must be re-persisted so /resume/save can follow up
+    from backend.app.services.resume_store import load_parsed
+    assert load_parsed(stored_resume) is not None
+
+
+def test_resume_check_accepts_either_file_or_id(client):
+    """Neither resume_file nor resume_id → 400."""
+    resp = client.post(
+        "/api/v1/resume/check",
+        data={"jd_text": "Python developer"},
+    )
+    assert resp.status_code == 400
+
+
+def test_resume_check_unknown_stored_id_returns_404(client):
+    """An unknown resume_id → 404, not a generic failure."""
+    resp = client.post(
+        "/api/v1/resume/check",
+        data={"resume_id": "does-not-exist", "jd_text": "Python developer"},
+    )
+    assert resp.status_code == 404
+
+
+def test_resume_check_file_takes_precedence_over_id(client, tmp_resume_simple, stored_resume):
+    """When both resume_file and resume_id are sent, the file wins.
+
+    This mirrors the Resume Check page's "Replace" flow: a freshly picked
+    file replaces the stored resume for this check and produces a new id.
+    """
+    with open(tmp_resume_simple, "rb") as f:
+        resp = client.post(
+            "/api/v1/resume/check",
+            files={"resume_file": ("resume.docx", f.read(), "application/vnd.openxmlformats-officedocument.wordprocessingml.document")},
+            data={"resume_id": stored_resume, "jd_text": "Python"},
+        )
+    assert resp.status_code == 200, resp.text
+    data = resp.json()
+    # The file path mints a brand-new resume id
+    assert data["resume_id"] != stored_resume
+
+
+def test_stored_resume_can_be_saved_after_check(client, stored_resume):
+    """Full stored-resume workflow: check by id then save accepted suggestions."""
+    # Step 1 — check using the stored resume
+    resp = client.post(
+        "/api/v1/resume/check",
+        data={"resume_id": stored_resume, "jd_text": "Python FastAPI"},
+    )
+    assert resp.status_code == 200, resp.text
+    resume_id = resp.json()["resume_id"]
+
+    # Step 2 — save accepted suggestions against that id
+    resp = client.post(
+        "/api/v1/resume/save",
+        json={
+            "resume_id": resume_id,
+            "accepted_suggestions": [
+                {"bullet_id": "b1", "suggested_text": "Built RAG systems with ChromaDB and FastAPI and LangChain",
+                 "original_text": "Built RAG systems with ChromaDB and FastAPI"},
+            ],
+            "mode": "new_file",
+            "confirm_overwrite": False,
+        },
+    )
+    assert resp.status_code == 200, resp.text
+    data = resp.json()
+    assert data["mode_applied"] == "new_file"
+    assert Path(data["file_ref"]).exists()
+    assert data.get("changes", {}).get("total_changes", 0) >= 1

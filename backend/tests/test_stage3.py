@@ -217,3 +217,101 @@ class TestAggregateGaps:
         d = m.model_dump()
         assert d["flags"] == ["vague", "unknown_company"]
         assert m.model_validate(d).flags == ["vague", "unknown_company"]
+
+
+# ---------------------------------------------------------------------------
+# Fresher Mode — experience-level classification (§15.1)
+# ---------------------------------------------------------------------------
+
+class TestExperienceClassification:
+    async def test_classifies_fresher_posting(self, monkeypatch):
+        """_classify_experience parses a valid LLM response into a level."""
+        from backend.app.services import job_matcher
+
+        async def fake_chat(*args, **kwargs):
+            # The bug: router.chat() has no `model` kwarg. This fake asserts
+            # the call now carries the qwen3:0.6b model + ollama provider.
+            assert kwargs.get("model") == "qwen3:0.6b"
+            assert kwargs.get("provider") == "ollama"
+            return {
+                "content": '{"experience_level": "fresher", "min_experience_years": 0, "confidence": 0.9}',
+                "provider": "ollama",
+                "model": "qwen3:0.6b",
+                "cached": False,
+            }
+
+        monkeypatch.setattr(job_matcher.router, "chat", fake_chat)
+        result = await job_matcher._classify_experience(
+            "Entry-level graduate role, freshers welcome, 0-1 years experience."
+        )
+        assert result == {
+            "experience_level": "fresher",
+            "min_experience_years": 0,
+            "confidence": 0.9,
+        }
+
+    async def test_falls_back_to_unclear_on_llm_failure(self, monkeypatch):
+        """If classification fails, it degrades to 'unclear' — never crashes."""
+        from backend.app.services import job_matcher
+
+        async def broken_chat(*args, **kwargs):
+            raise RuntimeError("ollama unreachable")
+
+        monkeypatch.setattr(job_matcher.router, "chat", broken_chat)
+        result = await job_matcher._classify_experience("Senior staff engineer role")
+        assert result["experience_level"] == "unclear"
+        assert result["min_experience_years"] is None
+
+    async def test_invalid_level_sanitised_to_unclear(self, monkeypatch):
+        from backend.app.services import job_matcher
+
+        async def fake_chat(*args, **kwargs):
+            return {
+                "content": '{"experience_level": "principal-arch", "confidence": 1.0}',
+                "provider": "ollama", "model": "qwen3:0.6b", "cached": False,
+            }
+
+        monkeypatch.setattr(job_matcher.router, "chat", fake_chat)
+        result = await job_matcher._classify_experience("some JD")
+        assert result["experience_level"] == "unclear"
+
+
+class TestLLMRouterModelOverride:
+    """Regression: router.chat() must accept a `model` override kwarg."""
+
+    async def test_chat_accepts_model_override(self, monkeypatch):
+        """chat(model=...) must not raise TypeError; the override reaches the provider."""
+        from backend.app.llm_router import router
+
+        captured: dict = {}
+
+        async def fake_call_provider(
+            provider, model, messages, *, max_tokens, temperature, cache_control, json_mode
+        ):
+            captured["provider"] = provider
+            captured["model"] = model
+            return {"content": "ok", "provider": provider, "model": model, "cached": False}
+
+        monkeypatch.setattr(router, "_call_provider", fake_call_provider)
+
+        result = await router.chat(
+            messages=[{"role": "user", "content": "classify"}],
+            provider="ollama",
+            model="qwen3:0.6b",
+            max_tokens=150,
+        )
+        assert result["content"] == "ok"
+        assert captured["model"] == "qwen3:0.6b"
+        assert captured["provider"] == "ollama"
+
+    def test_model_override_respects_missing_credentials(self, monkeypatch):
+        """An explicit model override must not bypass nvidia credential gating."""
+        from backend.app.llm_router import router
+        from backend.app import config
+
+        # No NVIDIA key present (tests strip it) — override must be rejected
+        monkeypatch.setattr(config.settings, "NVIDIA_NIM_API_KEY", None)
+        assert router._model_for("nvidia", "simple", override="gpt-4o") is None
+
+        # Ollama is local — no credentials needed, override passes through
+        assert router._model_for("ollama", "simple", override="qwen3:0.6b") == "qwen3:0.6b"

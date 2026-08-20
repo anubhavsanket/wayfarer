@@ -207,6 +207,7 @@ async def _classify_experience(jd_text: str) -> dict[str, Any]:
         resp = await router.chat(
             messages=[{"role": "user", "content": _CLASSIFICATION_PROMPT.format(text=jd_text[:1500])}],
             model="qwen3:0.6b",
+            provider="ollama",
             max_tokens=150,
         )
         result = extract_json(resp["content"])

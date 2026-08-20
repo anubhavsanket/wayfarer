@@ -35,6 +35,11 @@ class OllamaEmbeddingFunction:
 
     def __call__(self, input: list[str]) -> list[list[float]]:
         import numpy as np
+        from .context import get_request_overrides
+
+        overrides = get_request_overrides()
+        ollama_endpoint = (overrides.ollama_endpoint if overrides and overrides.ollama_endpoint else settings.OLLAMA_ENDPOINT)
+        url = f"{ollama_endpoint.rstrip('/')}/api/embeddings"
 
         texts = [input] if isinstance(input, str) else list(input)
         vectors: list[list[float]] = []
@@ -44,14 +49,14 @@ class OllamaEmbeddingFunction:
             for text in texts:
                 try:
                     resp = client.post(
-                        self._url,
+                        url,
                         json={"model": self.model, "prompt": text},
                     )
                     resp.raise_for_status()
                     vectors.append(resp.json()["embedding"])
                 except httpx.ConnectError:
                     raise RuntimeError(
-                        f"Ollama is not reachable at {self._url}. "
+                        f"Ollama is not reachable at {url}. "
                         "Start Ollama locally (`ollama serve`) or use Docker Compose, "
                         f"and pull the embedding model: ollama pull {self.model}"
                     ) from None

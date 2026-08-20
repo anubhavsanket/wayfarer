@@ -14,10 +14,11 @@ from contextlib import asynccontextmanager
 
 import httpx
 import redis.asyncio as redis
-from fastapi import FastAPI, File, Form, Query, UploadFile
+from fastapi import FastAPI, File, Form, Query, Request, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 
 from .config import settings
+from .context import RequestOverrides, get_request_overrides, request_overrides_var
 from .llm_router import router as llm_router
 from .vector_store import store as vector_store
 from .models.schemas import (
@@ -41,6 +42,10 @@ logger = logging.getLogger(__name__)
 # Global clients
 redis_client: redis.Redis | None = None
 http_client: httpx.AsyncClient | None = None
+
+# Background refresh worker (Redis job queue)
+refresh_worker_task: asyncio.Task | None = None
+refresh_stop_event: asyncio.Event | None = None
 
 
 async def _check_chromadb() -> DependencyStatus:
@@ -85,12 +90,15 @@ async def _check_redis() -> DependencyStatus:
 
 
 async def _check_nvidia_nim() -> DependencyStatus:
-    if not settings.NVIDIA_NIM_API_KEY:
+    overrides = get_request_overrides()
+    api_key = (overrides.nvidia_api_key if overrides and overrides.nvidia_api_key else settings.NVIDIA_NIM_API_KEY)
+    endpoint = (overrides.nvidia_endpoint if overrides and overrides.nvidia_endpoint else settings.NVIDIA_NIM_ENDPOINT)
+    if not api_key:
         return DependencyStatus(name="nvidia_nim", status="down", detail="no API key")
     try:
         await _http_get(
-            f"{settings.NVIDIA_NIM_ENDPOINT.rstrip('/')}/models",
-            headers={"Authorization": f"Bearer {settings.NVIDIA_NIM_API_KEY}"},
+            f"{endpoint.rstrip('/')}/models",
+            headers={"Authorization": f"Bearer {api_key}"},
         )
         return DependencyStatus(name="nvidia_nim", status="up", detail="API reachable")
     except Exception as exc:
@@ -98,12 +106,15 @@ async def _check_nvidia_nim() -> DependencyStatus:
 
 
 async def _check_openrouter() -> DependencyStatus:
-    if not settings.OPENROUTER_API_KEY:
+    overrides = get_request_overrides()
+    api_key = (overrides.openrouter_api_key if overrides and overrides.openrouter_api_key else settings.OPENROUTER_API_KEY)
+    endpoint = (overrides.openrouter_endpoint if overrides and overrides.openrouter_endpoint else settings.OPENROUTER_ENDPOINT)
+    if not api_key:
         return DependencyStatus(name="openrouter", status="down", detail="no API key")
     try:
         await _http_get(
-            f"{settings.OPENROUTER_ENDPOINT.rstrip('/')}/models",
-            headers={"Authorization": f"Bearer {settings.OPENROUTER_API_KEY}"},
+            f"{endpoint.rstrip('/')}/models",
+            headers={"Authorization": f"Bearer {api_key}"},
         )
         return DependencyStatus(name="openrouter", status="up", detail="API reachable")
     except Exception as exc:
@@ -113,7 +124,7 @@ async def _check_openrouter() -> DependencyStatus:
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Application lifespan: startup & shutdown."""
-    global redis_client, http_client
+    global redis_client, http_client, refresh_worker_task, refresh_stop_event
 
     # Startup
     logger.info("Starting Wayfarer API...")
@@ -142,10 +153,25 @@ async def lifespan(app: FastAPI):
                 if attempt < 3:
                     await asyncio.sleep(5 * attempt)
 
+    # Start the Redis-backed refresh worker (consumes /jobs/refresh jobs)
+    refresh_stop_event = asyncio.Event()
+    from .services.jobs_queue import run_worker
+    refresh_worker_task = asyncio.create_task(
+        run_worker(redis_client, stop_event=refresh_stop_event)
+    )
+
     yield
 
     # Shutdown
     logger.info("Shutting down...")
+    if refresh_worker_task:
+        if refresh_stop_event:
+            refresh_stop_event.set()
+        refresh_worker_task.cancel()
+        try:
+            await refresh_worker_task
+        except asyncio.CancelledError:
+            pass
     await llm_router.aclose()
     if http_client:
         await http_client.aclose()
@@ -168,6 +194,33 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+@app.middleware("http")
+async def extract_header_overrides_middleware(request: Request, call_next):
+    """Extract X-* request headers from frontend and populate request_overrides_var."""
+    headers = request.headers
+    overrides = RequestOverrides(
+        llm_provider=headers.get("x-llm-provider") or None,
+        nvidia_api_key=headers.get("x-nvidia-api-key") or None,
+        nvidia_endpoint=headers.get("x-nvidia-endpoint") or None,
+        openrouter_api_key=headers.get("x-openrouter-api-key") or None,
+        openrouter_endpoint=headers.get("x-openrouter-endpoint") or None,
+        ollama_endpoint=headers.get("x-ollama-endpoint") or None,
+        lmstudio_endpoint=headers.get("x-lmstudio-endpoint") or None,
+        lmstudio_model=headers.get("x-lmstudio-model") or None,
+        custom_endpoint=headers.get("x-custom-endpoint") or None,
+        custom_api_key=headers.get("x-custom-api-key") or None,
+        custom_model=headers.get("x-custom-model") or None,
+        tavily_api_key=headers.get("x-tavily-api-key") or None,
+        brave_api_key=headers.get("x-brave-api-key") or None,
+        bluedoor_api_key=headers.get("x-bluedoor-api-key") or None,
+    )
+    token = request_overrides_var.set(overrides)
+    try:
+        return await call_next(request)
+    finally:
+        request_overrides_var.reset(token)
 
 
 # ---------------------------------------------------------------------------
@@ -204,26 +257,39 @@ async def search(request: SearchRequest) -> SearchResponse:
 
 @app.post("/api/v1/resume/check", response_model=ResumeCheckResponse, tags=["stage2"])
 async def resume_check(
-    resume_file: UploadFile = File(...),
+    resume_file: UploadFile | None = File(None),
+    resume_id: str | None = Form(None),
     jd_text: str = Form(...),
 ) -> ResumeCheckResponse:
-    """Stage 2: check a resume (PDF/DOCX) against a job description."""
+    """Stage 2: check a resume (PDF/DOCX) against a job description.
+
+    Supports either:
+    1. Uploading a new file (resume_file)
+    2. Referencing a previously uploaded resume (resume_id)
+    """
     from .services import resume_store
     from .services.ats_checker import check_resume
+    from fastapi import HTTPException
 
-    content = await resume_file.read()
-    if not content:
-        from fastapi import HTTPException
-        raise HTTPException(status_code=400, detail="Uploaded resume is empty")
+    if resume_file:
+        content = await resume_file.read()
+        if not content:
+            raise HTTPException(status_code=400, detail="Uploaded resume is empty")
 
-    # Persist the upload and get a resume_id for later save
-    resume_id, saved_path = resume_store.store_upload(
-        content, resume_file.filename or "resume",
-    )
+        # Persist the upload and get a resume_id for later save
+        resume_id, saved_path = resume_store.store_upload(
+            content, resume_file.filename or "resume",
+        )
+    elif resume_id:
+        saved_path = resume_store.original_file_path(resume_id)
+        if not saved_path:
+            raise HTTPException(status_code=404, detail=f"Resume {resume_id} not found")
+    else:
+        raise HTTPException(status_code=400, detail="Either resume_file or resume_id must be provided")
+
     try:
         return await check_resume(str(saved_path), jd_text, resume_id=resume_id)
     except ValueError as exc:
-        from fastapi import HTTPException
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
@@ -309,16 +375,29 @@ async def jobs_match(
 # ---------------------------------------------------------------------------
 
 @app.post("/api/v1/jobs/refresh", tags=["stage3"])
-async def jobs_refresh():
+async def jobs_refresh(background: bool = Query(default=False, description="Run asynchronously via the Redis job queue")):
     """Re-fetch postings from all boards and store in ChromaDB job_postings.
 
-    Intended to be called periodically (e.g. via a cron job or background
-    task queue). Stores postings in ChromaDB so future /jobs/match calls
-    can read from the local store instead of hitting external APIs.
+    Two modes:
+    - ``background=false`` (default): runs synchronously, returning the
+      refreshed counts in the response body.
+    - ``background=true``: enqueues a job on the Redis-backed queue and
+      returns immediately with ``job_id`` / ``status="queued"``. Track
+      progress via ``GET /api/v1/jobs/refresh/status/{job_id}``.
     """
+    from .services.jobs_queue import enqueue_refresh
+
+    if redis_client is None:
+        from fastapi import HTTPException
+        raise HTTPException(status_code=503, detail="Redis unavailable")
+
+    if background:
+        job_id = await enqueue_refresh(redis_client)
+        return {"job_id": job_id, "status": "queued"}
+
+    # Synchronous path — ran by a client that wants the result inline
     from .services.job_matcher import _discover_postings, _dedupe_postings, _normalise_postings, _drop_stale
     from .config import settings
-    from datetime import datetime, timezone
 
     postings = await _discover_postings()
     postings = _dedupe_postings(postings)
@@ -354,6 +433,22 @@ async def jobs_refresh():
             for s in set(p.source for p in postings)
         } if postings else {},
     }
+
+
+@app.get("/api/v1/jobs/refresh/status/{job_id}", tags=["stage3"])
+async def jobs_refresh_status(job_id: str) -> dict:
+    """Poll the status of a background refresh job (see /jobs/refresh)."""
+    from .services.jobs_queue import get_job_status
+
+    if redis_client is None:
+        from fastapi import HTTPException
+        raise HTTPException(status_code=503, detail="Redis unavailable")
+
+    status = await get_job_status(redis_client, job_id)
+    if status is None:
+        from fastapi import HTTPException
+        raise HTTPException(status_code=404, detail=f"Unknown job_id: {job_id}")
+    return status
 
 
 # ---------------------------------------------------------------------------

@@ -23,12 +23,22 @@ export default function ResumeCheckPage() {
   const storedFileName = localStorage.getItem("resume_filename") ?? "";
 
   const mutation = useMutation({
-    mutationFn: ({ file, jd }: { file: File; jd: string }) =>
-      api.resumeCheck(file, jd),
+    mutationFn: ({ file, jd }: { file?: File; jd: string }) =>
+      file
+        ? api.resumeCheck(jd, file)
+        : api.resumeCheck(jd, undefined, storedResumeId),
     onSuccess: (data) => {
       setResult(data);
       if (data.resume_id) {
         localStorage.setItem("resume_id", data.resume_id);
+      }
+    },
+    onError: (error: Error) => {
+      // If the stored resume_id is stale (404 — the server lost the file),
+      // clear it and let the user re-upload instead of staying stuck.
+      if (/404|not found/i.test(error.message)) {
+        localStorage.removeItem("resume_id");
+        localStorage.removeItem("resume_filename");
       }
     },
   });
@@ -36,14 +46,9 @@ export default function ResumeCheckPage() {
   const canCheck = (storedResumeId || resumeFile) && jdText.trim();
 
   const handleCheck = () => {
-    if (resumeFile && jdText.trim()) {
-      // Upload new resume + check
-      mutation.mutate({ file: resumeFile, jd: jdText.trim() });
-    } else if (storedResumeId && jdText.trim()) {
-      // Use stored resume — need to re-upload it for the backend
-      // (the backend doesn't persist resume data across requests)
-      // For now, show a message asking to use Settings to upload
-    }
+    if (!jdText.trim()) return;
+    // Use the uploaded file if present, otherwise fall back to the stored resume
+    mutation.mutate({ file: resumeFile ?? undefined, jd: jdText.trim() });
   };
 
   return (

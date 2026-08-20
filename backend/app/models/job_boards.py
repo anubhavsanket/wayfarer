@@ -19,6 +19,7 @@ import re
 import yaml
 from pydantic import BaseModel, Field
 
+from ..context import get_request_overrides
 from ..models.schemas import JobPosting
 
 logger = logging.getLogger(__name__)
@@ -96,6 +97,9 @@ def _resolve_path(obj: Any, path: str) -> Any:
 
 def _get_api_key(board: JobBoardEntry) -> str | None:
     if board.auth == "api_key" and board.api_key_env:
+        overrides = get_request_overrides()
+        if board.api_key_env == "BLUEDOOR_API_KEY" and overrides and overrides.bluedoor_api_key:
+            return overrides.bluedoor_api_key
         return os.environ.get(board.api_key_env)
     return None
 
