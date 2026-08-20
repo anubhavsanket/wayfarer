@@ -186,14 +186,9 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
-# CORS — allow local frontend
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["http://localhost:3000", "http://127.0.0.1:3000"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
+# ---------------------------------------------------------------------------
+# Request-scoped header overrides middleware
+# ---------------------------------------------------------------------------
 
 
 @app.middleware("http")
@@ -221,6 +216,17 @@ async def extract_header_overrides_middleware(request: Request, call_next):
         return await call_next(request)
     finally:
         request_overrides_var.reset(token)
+
+
+# CORS — must be added AFTER the custom middleware above so it runs outermost.
+# FastAPI stacks add_middleware() calls in reverse: last added = outermost.
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["http://localhost:3000", "http://127.0.0.1:3000"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 
 # ---------------------------------------------------------------------------

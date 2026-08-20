@@ -76,22 +76,6 @@ def _make_track_change_elements(
     return del_el, ins
 
 
-def _add_track_change_paragraph(
-    doc: Document,
-    text: str,
-    style: str | None = None,
-) -> tuple[OxmlElement, OxmlElement]:
-    """Add a paragraph with track-changes elements.
-
-    Returns the paragraph XML element and a run element to append track-changes to.
-    """
-    p = doc.add_paragraph(text, style=style)
-    # Remove the default run we just created
-    for run in p.runs[:]:
-        run._element.getparent().remove(run._element)
-    return p._p, p
-
-
 # ---------------------------------------------------------------------------
 # DOCX writer with track-changes
 # ---------------------------------------------------------------------------
