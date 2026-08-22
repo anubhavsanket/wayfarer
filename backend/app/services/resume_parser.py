@@ -26,6 +26,29 @@ from ..models.schemas import StructuralIssue
 
 logger = logging.getLogger(__name__)
 
+# ---------------------------------------------------------------------------
+# OCR support (optional — for embedded images in DOCX)
+# ---------------------------------------------------------------------------
+
+_TESSERACT_PATH = r"C:\Program Files\Tesseract-OCR\tesseract.exe"
+
+def _ocr_image(image_bytes: bytes) -> str:
+    """Run Tesseract OCR on raw image bytes. Returns extracted text or ''."""
+    try:
+        import pytesseract
+        from PIL import Image
+        import io
+
+        img = Image.open(io.BytesIO(image_bytes))
+        # Skip tiny images (logos, bullets, icons) — OCR on them is noise
+        if img.width < 80 or img.height < 30:
+            return ""
+        text = pytesseract.image_to_string(img, config="--psm 6")
+        return text.strip()
+    except Exception as exc:
+        logger.debug("OCR failed on embedded image: %s", exc)
+        return ""
+
 
 # ---------------------------------------------------------------------------
 # Data structures
@@ -152,6 +175,7 @@ def _parse_docx(file_path: str) -> tuple[list[str], dict[int, str], list[dict[st
 
     DOCX has no "pages"; page_placeholder is {1: full text} for uniform API.
     Tables: list of {page, headers, rows, cell_text}.
+    Embedded images are OCR'd via Tesseract and appended as text lines.
     """
     doc = docx.Document(file_path)
     paragraph_lines: list[str] = []
@@ -177,7 +201,31 @@ def _parse_docx(file_path: str) -> tuple[list[str], dict[int, str], list[dict[st
             "cell_text": cell_text,
         })
 
-    return paragraph_lines, {1: "\n".join(paragraph_lines)}, tables
+    # ── OCR embedded images (profile photos, diagrams, etc.) ──────────
+    ocr_lines: list[str] = []
+    try:
+        from docx.opc.constants import RELATIONSHIP_TYPE as RT
+        for rel in doc.part.rels.values():
+            if "image" in rel.reltype:
+                try:
+                    image_part = rel.target_part
+                    image_bytes = image_part.blob
+                    ocr_text = _ocr_image(image_bytes)
+                    if ocr_text:
+                        # Split into lines and filter noise
+                        for line in ocr_text.splitlines():
+                            cleaned = line.strip()
+                            if len(cleaned) > 3:  # skip single-char OCR noise
+                                ocr_lines.append(cleaned)
+                except Exception as exc:
+                    logger.debug("Failed to OCR embedded image: %s", exc)
+    except Exception as exc:
+        logger.debug("Image extraction skipped: %s", exc)
+
+    if ocr_lines:
+        logger.info("OCR extracted %d lines from embedded images", len(ocr_lines))
+
+    return paragraph_lines, {1: "\n".join(paragraph_lines)}, tables, ocr_lines
 
 
 # ---------------------------------------------------------------------------
@@ -265,8 +313,9 @@ def parse_resume(file_path: str | Path) -> ParsedResume:
     if ext == ".pdf":
         raw_lines, page_texts, tables = _parse_pdf(path)
         ats_text = "\n".join(page_texts.values())
+        ocr_lines: list[str] = []
     elif ext in (".docx", ".doc"):
-        raw_lines, page_texts, tables = _parse_docx(path)
+        raw_lines, page_texts, tables, ocr_lines = _parse_docx(path)
         ats_text = "\n".join(page_texts.values())
     else:
         raise ValueError(f"Unsupported resume format: {ext} (use .pdf or .docx)")
@@ -274,9 +323,10 @@ def parse_resume(file_path: str | Path) -> ParsedResume:
     # Detect structural issues (table loss in ATS extraction)
     structural_issues = _detect_structural_issues(tables, ats_text)
 
-    # Parse named sections from the raw lines
-    raw_text = "\n".join(raw_lines)
-    sections, bullets = _parse_sections(raw_lines)
+    # Parse named sections from the raw lines (include OCR text)
+    all_lines = raw_lines + ocr_lines
+    raw_text = "\n".join(all_lines)
+    sections, bullets = _parse_sections(all_lines)
 
     # Extract contact info
     contact = _extract_contact(raw_lines)

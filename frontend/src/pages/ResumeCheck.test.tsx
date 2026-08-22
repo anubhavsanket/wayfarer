@@ -76,7 +76,10 @@ describe("ResumeCheckPage — stored-resume flow", () => {
 
     renderPage();
 
-    // Pick a replacement file
+    // Click "Use a different resume" to switch to upload mode
+    fireEvent.click(screen.getByText(/Use a different resume/));
+
+    // Pick a replacement file — the file input is now visible
     const file = new File(["hello"], "new_resume.docx", {
       type: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
     });

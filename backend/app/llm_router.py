@@ -357,11 +357,23 @@ class LLMRouter:
         overrides = get_request_overrides()
         ollama_endpoint = (overrides.ollama_endpoint if overrides and overrides.ollama_endpoint else settings.OLLAMA_ENDPOINT)
         url = f"{ollama_endpoint.rstrip('/')}/api/chat"
+
+        # Sanitize messages: ensure all content is string-only (no image objects)
+        # Some models (gemma3, llava) accept images; our text-only models reject them.
+        clean_messages = []
+        for msg in messages:
+            content = msg.get("content", "")
+            if isinstance(content, list):
+                # Multimodal format — extract only text parts
+                text_parts = [p.get("text", "") for p in content if isinstance(p, dict) and p.get("type") == "text"]
+                content = "\n".join(text_parts) if text_parts else str(content)
+            clean_messages.append({"role": msg["role"], "content": str(content)})
+
         resp = await self._client.post(
             url,
             json={
                 "model": model,
-                "messages": messages,
+                "messages": clean_messages,
                 "stream": False,
                 "options": {
                     "num_predict": max_tokens,
@@ -372,6 +384,11 @@ class LLMRouter:
         )
         resp.raise_for_status()
         data = resp.json()
+
+        # Handle Ollama error responses (e.g. "model does not support image input")
+        if "error" in data:
+            raise RuntimeError(f"Ollama error: {data['error']}")
+
         return {
             "content": data["message"]["content"],
             "provider": "ollama",

@@ -8,8 +8,9 @@
 Built and designed to actually be used for the author's own job search. Calls out to
 free-tier APIs as fallback when local inference would blow the 4 GB VRAM budget.
 
-**Version: 1.1** — includes Fresher Mode, employment-type classification, LinkedIn
-integration, and background pipeline maintenance.
+**Version: 1.1** — Fresher Mode, employment-type classification, LinkedIn
+integration, background pipeline maintenance, Tesseract OCR for embedded images,
+and neo-brutalist dark/light theme UI.
 
 ---
 
@@ -74,6 +75,10 @@ behalf.
 - **Config-driven job boards** — adding a board = a YAML entry, not a code change.
 - **Fresher Mode** — filter postings to entry-level/junior roles using a small
   local LLM (qwen3:0.6b) for experience-level classification.
+- **Tesseract OCR** — extracts text from embedded images in DOCX resumes (profile
+  photos, diagrams, infographics) so the ATS checker sees everything.
+- **Neo-brutalist UI** — dark/light theme toggle, animated score bars, sticker
+  badges, anime.js entrance animations.
 
 ---
 
@@ -93,7 +98,7 @@ behalf.
 │  Search Agent   │      │  Resume/ATS Checker    │     │   Job Matcher         │
 │                 │      │                        │     │                       │
 │ Search API      │      │ pdfplumber/python-docx │     │ bluedoor + LinkedIn   │
-│ (Tavily/Brave)  │      │ pdftotext ATS sim      │     │ Fresher Mode          │
+│ (Tavily/Brave)  │      │ Tesseract OCR          │     │ Fresher Mode          │
 │ + Crawl4AI      │      │ Embedding matcher      │     │ Hybrid scoring        │
 │ fetch/clean     │      │ Confidence-tiered      │     │ Legitimacy checks     │
 │                 │      │ redline generator      │     │ Background refresh    │
@@ -113,7 +118,8 @@ behalf.
 - **LLM Router** — `backend/app/llm_router.py`. Every stage calls inference through
   this module, never directly against a provider. Supports 5 providers: NVIDIA NIM,
   OpenRouter, Ollama (local), LM Studio (local), and any custom OpenAI-compatible
-  endpoint. Tracks per-provider rate limits and falls back automatically.
+  endpoint. Tracks per-provider rate limits and falls back automatically. Sanitizes
+  multimodal payloads for text-only models.
 - **Embedding layer** — `nomic-embed-text` via Ollama, kept local. Embeddings are
   cheap enough on a GTX 1650 that they don't need router fallback.
 - **ChromaDB** — one persistent store, three separate collections (`search_cache`,
@@ -135,6 +141,7 @@ wayfarer/
 │   ├── app/
 │   │   ├── main.py                  # FastAPI entry, health, lifespan
 │   │   ├── config.py                # Pydantic Settings (.env-driven)
+│   │   ├── context.py               # Per-request ContextVar for header overrides
 │   │   ├── llm_router.py            # Multi-provider inference router
 │   │   ├── vector_store.py          # Multi-collection ChromaDB wrapper
 │   │   ├── models/
@@ -147,15 +154,16 @@ wayfarer/
 │   │   │   ├── search_api.py        # Tavily + Brave clients
 │   │   │   ├── web_fetch.py         # Crawl4AI concurrency-capped fetcher
 │   │   │   ├── search_service.py    # Stage 1 orchestrator
-│   │   │   ├── resume_parser.py     # PDF/DOCX parsing + ATS simulation
+│   │   │   ├── resume_parser.py     # PDF/DOCX parsing + Tesseract OCR + ATS sim
 │   │   │   ├── ats_checker.py       # Stage 2 orchestrator
 │   │   │   ├── resume_saver.py      # Save with/without overwrite
 │   │   │   ├── resume_store.py      # Upload persistence
 │   │   │   ├── job_matcher.py       # Stage 3 orchestrator + Fresher Mode
+│   │   │   ├── jobs_queue.py        # Redis-backed background refresh queue
 │   │   │   └── legitimacy.py        # Ghost / no-sponsorship checks
 │   │   └── utils/
 │   │       └── cache.py             # Content-hash memoization
-│   ├── tests/                       # 48 tests (36 unit + 12 E2E)
+│   ├── tests/                       # 56 tests (unit + integration)
 │   ├── requirements.txt
 │   ├── pytest.ini
 │   └── Dockerfile
@@ -167,9 +175,21 @@ wayfarer/
 │   │   │   ├── ResumeCheck.tsx      # Stage 2 UI
 │   │   │   ├── JobMatch.tsx         # Stage 3 UI + Fresher Mode toggle
 │   │   │   └── Settings.tsx         # API keys + resume upload
-│   │   ├── components/ui/           # Button, Card primitives
-│   │   ├── stores/settings.ts       # localStorage-backed API key store
-│   │   └── lib/{api.ts, types.ts, utils.ts}
+│   │   ├── components/
+│   │   │   ├── ui/                  # Button, Card, Sticker, ScoreBar
+│   │   │   ├── Reveal.tsx           # Anime.js entrance animations
+│   │   │   └── LoadingIndicator.tsx # Animated loading dots
+│   │   ├── stores/
+│   │   │   ├── settings.ts          # localStorage-backed API key store
+│   │   │   └── theme.ts             # Dark/light theme hook
+│   │   ├── lib/
+│   │   │   ├── api.ts               # Typed API client
+│   │   │   ├── types.ts             # Shared TypeScript types
+│   │   │   └── animations.ts        # Anime.js animation helpers
+│   │   ├── styles/globals.css       # Neo-brutalist design tokens + dark mode
+│   │   └── test/setup.ts            # Vitest setup with matchMedia mock
+│   ├── vite.config.ts               # Vite + Vitest config
+│   ├── tailwind.config.js           # Custom palette + shadow system
 │   ├── Dockerfile + nginx.conf
 │   └── package.json
 ├── config/
@@ -255,7 +275,8 @@ The resume you upload in Settings is used across all stages — no need to re-up
 ### Prerequisites
 - Python 3.11 or 3.12 (3.14 doesn't build the pinned dependencies)
 - Node.js 20+ (only for frontend work)
-- Ollama installed locally (or Docker for ChromaDB/Ollama)
+- Ollama installed locally
+- Tesseract OCR (for embedded image extraction from DOCX resumes)
 
 ### 1. Create a venv and install backend deps
 
@@ -267,7 +288,18 @@ source .venv/bin/activate  # Linux/Mac
 pip install -r requirements.txt
 ```
 
-### 2. Pull models
+### 2. Create a local .env
+
+```bash
+# backend/.env
+OLLAMA_ENDPOINT=http://localhost:11434
+CHROMA_HOST=localhost
+CHROMA_PORT=8001
+REDIS_URL=redis://localhost:6379
+LLM_PROVIDER=ollama
+```
+
+### 3. Pull models
 
 ```bash
 ollama pull nomic-embed-text
@@ -275,7 +307,7 @@ ollama pull nomic-embed-text
 ollama pull llama3.2:3b
 ```
 
-### 3. Run the API
+### 4. Run the API
 
 From the project root:
 ```bash
@@ -284,7 +316,7 @@ uvicorn backend.app.main:app --reload --host 0.0.0.0 --port 8000
 
 ChromaDB falls back to a persistent local store at `./chroma_db/` automatically.
 
-### 4. Run the frontend
+### 5. Run the frontend
 
 ```bash
 cd frontend
@@ -424,7 +456,7 @@ python -m pytest tests/test_stage1.py tests/test_stage2.py tests/test_stage3.py 
 python -m pytest tests/test_docker_e2e.py -v
 ```
 
-**Test suite: 48 tests** (9 Stage1 + 11 Stage2 + 16 Stage3 + 12 E2E Docker), all passing.
+**Test suite: 56 backend tests + 10 frontend tests**, all passing.
 
 ---
 
@@ -442,6 +474,12 @@ python -m pytest tests/test_docker_e2e.py -v
 | **LM Studio / custom** | ✅ | Any OpenAI-compatible endpoint works |
 | **Side-by-side redlines** | ✅ | Original vs. suggested view in Resume Check |
 | **One-command setup** | ✅ | `bash setup.sh` or curl link |
+| **Tesseract OCR** | ✅ | Extract text from embedded images in DOCX resumes |
+| **Neo-brutalist UI** | ✅ | Dark/light theme, animated score bars, sticker badges |
+| **Stored resume** | ✅ | Upload once in Settings, used across all stages |
+| **OOXML track-changes** | ✅ | Resume save outputs Word-compatible tracked changes |
+| **Background refresh queue** | ✅ | Redis-backed job queue for async board refresh |
+| **Per-request overrides** | ✅ | Frontend settings sent as X-* headers per-request |
 
 ---
 
@@ -453,8 +491,8 @@ python -m pytest tests/test_docker_e2e.py -v
   Keep volume low, personal-use only.
 - **VRAM ceiling** — keep embeddings + local LLM under 4 GB total. Heavy inference
   is routed to APIs via the LLM Router.
-- **No `.docx` track-changes export** — redline view is HTML-based for MVP.
-  OOXML track-changes is a v2 stretch goal.
+- **OOXML track-changes** — supported for resume save output. The UI redline view is HTML-based.
+- **Tesseract OCR accuracy** — low-resolution embedded images may produce noisy text. Icons under 80px are skipped.
 - **Python 3.11 / 3.12 only** — pinned dependencies don't build on 3.14.
 
 ---

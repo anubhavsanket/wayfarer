@@ -1,7 +1,7 @@
 // Mirrors backend Pydantic schemas
 
 export type ConfidenceTier = "verified" | "reworded" | "gap";
-export type SaveMode = "new_file" | "overwrite";
+export type SaveMode = "new_file" | "overwrite" | "set_as_primary";
 
 // Health
 

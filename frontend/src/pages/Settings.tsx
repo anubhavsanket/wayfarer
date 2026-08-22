@@ -4,6 +4,7 @@ import { Settings as SettingsIcon, Eye, EyeOff, Save, RotateCcw, CheckCircle2, U
 import { useSettings } from "@/stores/settings";
 import { api } from "@/lib/api";
 import { Card } from "@/components/ui/card";
+import { Sticker } from "@/components/ui/badge";
 
 const PROVIDERS = [
   { value: "nvidia", label: "NVIDIA NIM (free tier)" },
@@ -13,7 +14,8 @@ const PROVIDERS = [
   { value: "custom", label: "Custom OpenAI-compatible" },
 ];
 
-// Resume upload card component
+/* ── Primary Resume Upload Card ──────────────────────────────────────── */
+
 function ResumeUploadCard() {
   const [resumeFile, setResumeFile] = useState<File | null>(null);
   const [storedResumeId, setStoredResumeId] = useState(
@@ -35,27 +37,32 @@ function ResumeUploadCard() {
 
   return (
     <Card className="p-6">
-      <h3 className="mb-2 font-medium">Main Resume</h3>
+      <h3 className="font-display mb-1 font-bold">Primary Resume</h3>
       <p className="mb-4 text-sm text-muted-foreground">
         Upload your resume once. It will be used automatically by Resume Check
         and Job Match — no need to re-upload each time.
       </p>
 
       {storedResumeId && (
-        <div className="mb-4 flex items-center gap-2 rounded-md bg-green-50 p-3 text-sm text-green-800">
-          <CheckCircle2 className="h-4 w-4" />
+        <div className="mb-4 flex items-center gap-2 rounded-md bg-blue-pale p-3 text-sm border-2 border-ink/20">
+          <CheckCircle2 className="h-4 w-4 shrink-0 text-blue" />
           <span className="font-medium">{storedFileName || "Resume uploaded"}</span>
-          <span className="text-xs text-green-600">({storedResumeId})</span>
+          <span className="text-xs text-muted-foreground">({storedResumeId})</span>
         </div>
       )}
 
-      <label className="flex cursor-pointer items-center gap-2 rounded-md border border-dashed p-4 text-sm text-muted-foreground hover:bg-muted">
+      <label className="flex cursor-pointer items-center gap-2 rounded-md border-2 border-dashed border-ink bg-cream p-4 text-sm text-muted-foreground transition-colors hover:bg-beige-deep">
         <Upload className="h-4 w-4" />
-        {resumeFile ? resumeFile.name : storedResumeId ? "Replace resume" : "Upload resume (PDF/DOCX)"}
+        {mutation.isPending
+          ? "Uploading..."
+          : storedResumeId
+            ? "Replace resume"
+            : "Upload resume (PDF/DOCX)"}
         <input
           type="file"
           accept=".pdf,.docx"
           className="hidden"
+          disabled={mutation.isPending}
           onChange={(e) => {
             const file = e.target.files?.[0];
             if (file) {
@@ -67,16 +74,21 @@ function ResumeUploadCard() {
       </label>
 
       {mutation.isError && (
-        <p className="mt-2 text-sm text-destructive">
-          Upload failed: {mutation.error.message}
-        </p>
+        <p className="mt-2 text-sm text-destructive">Upload failed: {mutation.error.message}</p>
       )}
       {mutation.isPending && (
         <p className="mt-2 text-sm text-muted-foreground">Processing resume...</p>
       )}
+      {mutation.isSuccess && (
+        <div className="mt-2">
+          <Sticker variant="blue">✓ Resume uploaded successfully</Sticker>
+        </div>
+      )}
     </Card>
   );
 }
+
+/* ── Field ──────────────────────────────────────────────────────────── */
 
 interface FieldProps {
   label: string;
@@ -92,8 +104,8 @@ function Field({ label, value, onChange, placeholder, type = "text", required }:
   const isPassword = type === "password";
 
   return (
-    <div className="space-y-1">
-      <label className="text-sm font-medium text-foreground">
+    <div className="space-y-1.5">
+      <label className="text-sm font-semibold text-foreground">
         {label} {required && <span className="text-destructive">*</span>}
       </label>
       <div className="flex gap-2">
@@ -102,13 +114,13 @@ function Field({ label, value, onChange, placeholder, type = "text", required }:
           value={value}
           onChange={(e) => onChange(e.target.value)}
           placeholder={placeholder}
-          className="flex-1 rounded-md border bg-background px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-ring"
+          className="flex-1 rounded-md border-2 border-ink bg-cream px-3 py-2 text-sm font-mono placeholder:text-ink/40 focus:outline-none focus:ring-2 focus:ring-cyan focus:ring-offset-2 focus:ring-offset-card"
         />
         {isPassword && (
           <button
             type="button"
             onClick={() => setShow(!show)}
-            className="rounded-md border px-2 text-muted-foreground hover:bg-muted"
+            className="flex items-center justify-center rounded-md border-2 border-ink bg-cream px-2 text-muted-foreground shadow-hard-sm transition-all duration-150 hover:-translate-y-0.5 hover:shadow-hard active:translate-y-0.5 active:shadow-hard-none"
           >
             {show ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
           </button>
@@ -117,6 +129,8 @@ function Field({ label, value, onChange, placeholder, type = "text", required }:
     </div>
   );
 }
+
+/* ── Main Page ──────────────────────────────────────────────────────── */
 
 export default function SettingsPage() {
   const { settings, update, reset } = useSettings();
@@ -128,30 +142,30 @@ export default function SettingsPage() {
   };
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4">
       {/* Header */}
       <Card className="p-6">
-        <div className="flex items-center gap-2 mb-2">
-          <SettingsIcon className="h-5 w-5" />
-          <h2 className="text-lg font-semibold">API Keys & Settings</h2>
+        <div className="mb-2 flex items-center gap-2">
+          <SettingsIcon className="h-5 w-5 text-blue" />
+          <h2 className="font-display text-lg font-bold">API Keys & Settings</h2>
         </div>
         <p className="text-sm text-muted-foreground">
           Enter your API keys here. Keys are stored in your browser's localStorage
           and sent as headers to the backend — they are never committed to git.
-          You can also use the <code>.env</code> file for Docker deployments.
+          You can also use the <code className="rounded bg-beige-deep px-1 font-mono text-xs">.env</code> file for Docker deployments.
         </p>
       </Card>
 
       {/* LLM Provider */}
       <Card className="p-6">
-        <h3 className="mb-4 font-medium">LLM Provider</h3>
+        <h3 className="font-display mb-4 font-bold">LLM Provider</h3>
         <div className="space-y-4">
-          <div className="space-y-1">
-            <label className="text-sm font-medium">Primary Provider</label>
+          <div className="space-y-1.5">
+            <label className="text-sm font-semibold">Primary Provider</label>
             <select
               value={settings.llm_provider}
               onChange={(e) => update({ llm_provider: e.target.value })}
-              className="w-full rounded-md border bg-background px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-ring"
+              className="w-full rounded-md border-2 border-ink bg-cream px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-cyan"
             >
               {PROVIDERS.map((p) => (
                 <option key={p.value} value={p.value}>{p.label}</option>
@@ -216,7 +230,7 @@ export default function SettingsPage() {
 
       {/* Search APIs */}
       <Card className="p-6">
-        <h3 className="mb-4 font-medium">Search APIs (Stage 1)</h3>
+        <h3 className="font-display mb-4 font-bold">Search APIs (Stage 1)</h3>
         <div className="space-y-4">
           <Field label="Tavily API Key" value={settings.tavily_api_key}
             onChange={(v) => update({ tavily_api_key: v })}
@@ -229,15 +243,19 @@ export default function SettingsPage() {
 
       {/* Job Board APIs */}
       <Card className="p-6">
-        <h3 className="mb-4 font-medium">Job Board APIs (Stage 3)</h3>
+        <h3 className="font-display mb-4 font-bold">Job Board APIs (Stage 3)</h3>
         <div className="space-y-4">
           <Field label="bluedoor.sh API Key" value={settings.bluedoor_api_key}
             onChange={(v) => update({ bluedoor_api_key: v })}
             placeholder="jobs_live_..." type="password" />
           <p className="text-xs text-muted-foreground">
             Get a free key at{" "}
-            <a href="https://bluedoor.sh/apis/job-postings" target="_blank"
-              className="text-primary underline underline-offset-2">
+            <a
+              href="https://bluedoor.sh/apis/job-postings"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-blue underline underline-offset-2 hover:text-blue/80"
+            >
               bluedoor.sh/apis/job-postings
             </a>{" "}
             (100 req/s free tier)
@@ -253,14 +271,14 @@ export default function SettingsPage() {
         <div className="flex gap-3">
           <button
             onClick={handleSave}
-            className="inline-flex items-center gap-2 rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90"
+            className="inline-flex items-center gap-2 rounded-md border-2 border-ink bg-blue px-4 py-2 text-sm font-semibold text-white shadow-hard-blue transition-all duration-150 hover:-translate-y-0.5 hover:shadow-hard-lg active:translate-y-0.5 active:shadow-hard-none"
           >
             {saved ? <CheckCircle2 className="h-4 w-4" /> : <Save className="h-4 w-4" />}
             {saved ? "Saved!" : "Save Settings"}
           </button>
           <button
             onClick={reset}
-            className="inline-flex items-center gap-2 rounded-md border px-4 py-2 text-sm font-medium hover:bg-muted"
+            className="inline-flex items-center gap-2 rounded-md border-2 border-ink bg-cream px-4 py-2 text-sm font-semibold text-ink shadow-hard-sm transition-all duration-150 hover:-translate-y-0.5 hover:shadow-hard active:translate-y-0.5 active:shadow-hard-none"
           >
             <RotateCcw className="h-4 w-4" />
             Reset to Defaults
