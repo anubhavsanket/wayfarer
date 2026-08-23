@@ -205,6 +205,7 @@ class RedisCache:
 # TTLs are configured in Settings (config.py) and converted to seconds here.
 
 llm_cache = RedisCache("llm", ttl_seconds=settings.CACHE_TTL_LLM_SECONDS)
+classification_cache = RedisCache("classify", ttl_seconds=settings.CACHE_TTL_LLM_SECONDS)
 embed_cache = RedisCache("embed", ttl_seconds=settings.CACHE_TTL_EMBEDDING_SECONDS)
 page_cache = RedisCache("pages", ttl_seconds=settings.CACHE_TTL_PAGE_SECONDS)
 query_cache = RedisCache("queries", ttl_seconds=settings.CACHE_TTL_QUERY_SECONDS)

@@ -20,6 +20,7 @@ import re
 from typing import Any
 
 from ..llm_router import router, extract_json, EXTRACT_KEYWORDS_TOOL, extract_tool_response
+from ..utils.cache import classification_cache, make_hash_key
 from ..models.schemas import (
     ConfidenceTier,
     KeywordGap,
@@ -36,6 +37,11 @@ logger = logging.getLogger(__name__)
 
 async def _extract_jd_keywords(jd_text: str) -> list[str]:
     """Extract skills/tools/certifications keywords from a JD via the LLM router."""
+    key = make_hash_key(jd_text)
+    cached = await classification_cache.get(key)
+    if cached:
+        return cached
+
     prompt = (
         "Extract the key technical and professional keywords (skills, tools, "
         "languages, frameworks, certifications) a candidate must demonstrate "
@@ -61,7 +67,10 @@ async def _extract_jd_keywords(jd_text: str) -> list[str]:
         if isinstance(data, str):
             data = [data]
         keywords = [k for k in data if isinstance(k, str) and k.strip()]
-        return list(dict.fromkeys(keywords))[:25]
+        keywords = list(dict.fromkeys(keywords))[:25]
+        
+        await classification_cache.set(key, keywords)
+        return keywords
     except Exception as exc:
         logger.warning("JD keyword extraction failed (%s); using fallback regex", exc)
         return _fallback_keywords(jd_text)

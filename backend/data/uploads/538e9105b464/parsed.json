@@ -1,0 +1,406 @@
+{
+  "sections": {
+    "preamble": [
+      "Anubhav Sanket",
+      "Bengaluru, India",
+      "(cid:131) +91 8789378076 # anubhavsanket22@gmail.com (cid:239) linkedin.com/in/anubhavsanket \u00a7 github.com/anubhavsanket",
+      "\u00a2 kaggle.com/anubhavsanket (cid:128) anubhavsanket.github.io/portfolio",
+      "Professional Summary",
+      "AI/ML Engineer building AI products end-to-end, from local LLM inference and RAG pipelines to deployed full-stack",
+      "applications. Built privacy-first, offline-capable systems using Ollama, ChromaDB, LangGraph, FastAPI, React/TypeScript,",
+      "Docker, WhisperX, FFmpeg, and CUDA. Strong focus on applied AI, developer tools, automation, model integration, and",
+      "shipping production-oriented features for early-stage teams."
+    ],
+    "skills": [
+      "AI Engineering: LLMs, RAG, Agentic AI, LangGraph, Prompt Engineering, Embeddings, Vector Search, LLM Evaluation,",
+      "Ollama, ChromaDB, multi-provider LLM routing, prompt caching, human-in-the-loop systems",
+      "Machine Learning: PyTorch, Transformers, scikit-learn, NLP, Computer Vision, WhisperX, OpenAI Whisper",
+      "Backend / Systems: Python, FastAPI, REST APIs, PostgreSQL, MongoDB, Redis, SQL",
+      "Infrastructure: Docker, Docker Compose, CUDA, NVIDIA GPU Inference, NVENC, Git, GitHub",
+      "Frontend: React, TypeScript, JavaScript, PyQt6, Tauri, Gradio, Vite, Tailwind CSS",
+      "Media / Multimodal: FFmpeg, WhisperX, Audio Processing, Video Processing, Word-level Transcription, Subtitle",
+      "Generation, GPU-accelerated Media Pipelines",
+      "Analytics: Power BI, DAX, Excel, Pandas, NumPy, Portfolio Optimization",
+      "Professional Experience",
+      "Oaz Shakti Nov. 2025 \u2013 Mar. 2026",
+      "Machine Learning / Power BI Intern Remote",
+      "\u2013 Built an electrical-business analytics dashboard over 24K+ transactions worth 124.6M, tracking net revenue, gross profit of",
+      "23.49M, and an 18.9% margin to support operational and financial decision-making.",
+      "\u2013 Identified 8.4M in overdue payments through receivables analysis, surfacing a concrete cash-flow intervention area for the",
+      "business.",
+      "\u2013 Developed and evaluated a quantitative asset-allocation solution for the Hull Tactical Market Prediction competition using",
+      "Powell optimization, modified Sharpe-ratio maximization, volatility penalties, leverage bounds, and risk constraints.",
+      "\u2013 Achieved Kaggle Rank 158/4,506, placing in the global Top 3.5%; packaged the solution and supporting analysis in a public",
+      "GitHub repository.",
+      "Varcons Technologies Pvt. Ltd. Aug. 2023 \u2013 Oct. 2023",
+      "Full-stack Developer Bengaluru, India",
+      "\u2013 Built and shipped a responsive ReactJS and MongoDB website for TechTune Motors with car-availability tracking,",
+      "appointment scheduling, and real-time CRUD workflows.",
+      "\u2013 Improved page-load performance by 30% through database-query optimization and more efficient data access patterns.",
+      "\u2013 Worked across frontend implementation, backend integration, data modeling, and user-facing workflow design in a",
+      "production-oriented web development setting."
+    ],
+    "projects": [
+      "Wayfarer: AI Job-Search Platform | FastAPI, React/TypeScript, Redis, ChromaDB, Ollama, Docker",
+      "\u2013 Built a full-stack AI platform that parses resumes, ranks live job posts, scores resume\u2013job-description fit, and provides",
+      "ATS-oriented feedback with human-in-the-loop review.",
+      "\u2013 Implemented Redis-backed caching and state management for LLM-powered job-matching workflows, supporting prompt",
+      "reuse, rate-limit handling, and responsive processing of long-running tasks.",
+      "\u2013 Designed a retrieval pipeline combining in-process embeddings, vector search, hybrid relevance scoring, and graph-based",
+      "resume memory to support token-efficient matching and explainable recommendations.",
+      "\u2013 Implemented a rate-limit-aware LLM router with NVIDIA NIM, OpenRouter, and Ollama providers, including fallback",
+      "behavior and prompt caching for resilient inference across hosted and local models.",
+      "\u2013 Added configuration-driven connectors for 12 job boards and resume ingestion across 14 document formats using document",
+      "parsing and OCR workflows.",
+      "LocalBrainNotes: Local Agentic RAG Assistant | LangGraph, ChromaDB, LLM Evaluation, Ollama, Python",
+      "\u2013 Built a local-first, Obsidian-like agentic RAG assistant over Markdown vaults, combining LangGraph orchestration,",
+      "ChromaDB retrieval, and Ollama-based local inference.",
+      "\u2013 Built a repeatable local LLM evaluation workflow using Ollama to compare agentic RAG responses across retrieval and",
+      "prompting configurations, assessing relevance, grounding, consistency, and failure cases.",
+      "\u2013 Focused the system on private knowledge access without requiring cloud-hosted model inference, demonstrating practical",
+      "retrieval, agent orchestration, and local deployment trade-offs.",
+      "Viral Clipper: Local GenAI Video Automation | Ollama, Gemma 3, WhisperX, PyQt6, FFmpeg, NVENC, CUDA",
+      "\u2013 Developed an offline video-automation platform that uses LLM analysis to identify and extract high-value moments from",
+      "long-form videos while keeping media processing local and privacy-preserving.",
+      "\u2013 Implemented batch processing for 100+ parallel workflows, AI-assisted 9:16 reframing with face-centered composition, and",
+      "animated word-level captions for short-form content generation.",
+      "\u2013 Integrated WhisperX, FFmpeg, NVENC hardware encoding, PyQt6, and CUDA acceleration into a local desktop pipeline",
+      "for transcription, clipping, reframing, caption rendering, and export.",
+      "Achievements & Publications",
+      "\u2022",
+      "Kaggle Competition: Rank 158/4,506 (Top 3.5%) in the Hull Tactical Market Prediction Challenge, 2025.",
+      "\u2022 Research Publication: Customer Segmentation using K-Means clustering, published in IJNRD; applied the Elbow Method",
+      "and Silhouette Analysis to select clusters from purchasing and demographic data.",
+      "\u2022 Google Tunix Hackathon Participant, 2025.",
+      "\u2022 Core Member, Art & Literature Club; organized 3 events during Karnataka Rajyotsava 2022."
+    ],
+    "education": [
+      "Dayananda Sagar Academy of Technology and Management (VTU) 2020 \u2013 2024",
+      "B.E. in Artificial Intelligence and Machine Learning Bengaluru, India"
+    ],
+    "certifications": [
+      "\u2022",
+      "Microsoft Certified in Data Engineering on Azure",
+      "\u2022 Power BI \u2014 Infosys Springboard",
+      "\u2022 Cyber Security \u2014 Infosys Springboard",
+      "\u2022 Hands-on Python \u2014 Coursera"
+    ]
+  },
+  "bullets": [
+    {
+      "id": "b0",
+      "section": "skills",
+      "text": "AI Engineering: LLMs, RAG, Agentic AI, LangGraph, Prompt Engineering, Embeddings, Vector Search, LLM Evaluation,"
+    },
+    {
+      "id": "b1",
+      "section": "skills",
+      "text": "Ollama, ChromaDB, multi-provider LLM routing, prompt caching, human-in-the-loop systems"
+    },
+    {
+      "id": "b2",
+      "section": "skills",
+      "text": "Machine Learning: PyTorch, Transformers, scikit-learn, NLP, Computer Vision, WhisperX, OpenAI Whisper"
+    },
+    {
+      "id": "b3",
+      "section": "skills",
+      "text": "Backend / Systems: Python, FastAPI, REST APIs, PostgreSQL, MongoDB, Redis, SQL"
+    },
+    {
+      "id": "b4",
+      "section": "skills",
+      "text": "Infrastructure: Docker, Docker Compose, CUDA, NVIDIA GPU Inference, NVENC, Git, GitHub"
+    },
+    {
+      "id": "b5",
+      "section": "skills",
+      "text": "Frontend: React, TypeScript, JavaScript, PyQt6, Tauri, Gradio, Vite, Tailwind CSS"
+    },
+    {
+      "id": "b6",
+      "section": "skills",
+      "text": "Media / Multimodal: FFmpeg, WhisperX, Audio Processing, Video Processing, Word-level Transcription, Subtitle"
+    },
+    {
+      "id": "b7",
+      "section": "skills",
+      "text": "Generation, GPU-accelerated Media Pipelines"
+    },
+    {
+      "id": "b8",
+      "section": "skills",
+      "text": "Analytics: Power BI, DAX, Excel, Pandas, NumPy, Portfolio Optimization"
+    },
+    {
+      "id": "b9",
+      "section": "skills",
+      "text": "Professional Experience"
+    },
+    {
+      "id": "b10",
+      "section": "skills",
+      "text": "Oaz Shakti Nov. 2025 \u2013 Mar. 2026"
+    },
+    {
+      "id": "b11",
+      "section": "skills",
+      "text": "Machine Learning / Power BI Intern Remote"
+    },
+    {
+      "id": "b12",
+      "section": "skills",
+      "text": "\u2013 Built an electrical-business analytics dashboard over 24K+ transactions worth 124.6M, tracking net revenue, gross profit of"
+    },
+    {
+      "id": "b13",
+      "section": "skills",
+      "text": "23.49M, and an 18.9% margin to support operational and financial decision-making."
+    },
+    {
+      "id": "b14",
+      "section": "skills",
+      "text": "\u2013 Identified 8.4M in overdue payments through receivables analysis, surfacing a concrete cash-flow intervention area for the"
+    },
+    {
+      "id": "b15",
+      "section": "skills",
+      "text": "business."
+    },
+    {
+      "id": "b16",
+      "section": "skills",
+      "text": "\u2013 Developed and evaluated a quantitative asset-allocation solution for the Hull Tactical Market Prediction competition using"
+    },
+    {
+      "id": "b17",
+      "section": "skills",
+      "text": "Powell optimization, modified Sharpe-ratio maximization, volatility penalties, leverage bounds, and risk constraints."
+    },
+    {
+      "id": "b18",
+      "section": "skills",
+      "text": "\u2013 Achieved Kaggle Rank 158/4,506, placing in the global Top 3.5%; packaged the solution and supporting analysis in a public"
+    },
+    {
+      "id": "b19",
+      "section": "skills",
+      "text": "GitHub repository."
+    },
+    {
+      "id": "b20",
+      "section": "skills",
+      "text": "Varcons Technologies Pvt. Ltd. Aug. 2023 \u2013 Oct. 2023"
+    },
+    {
+      "id": "b21",
+      "section": "skills",
+      "text": "Full-stack Developer Bengaluru, India"
+    },
+    {
+      "id": "b22",
+      "section": "skills",
+      "text": "\u2013 Built and shipped a responsive ReactJS and MongoDB website for TechTune Motors with car-availability tracking,"
+    },
+    {
+      "id": "b23",
+      "section": "skills",
+      "text": "appointment scheduling, and real-time CRUD workflows."
+    },
+    {
+      "id": "b24",
+      "section": "skills",
+      "text": "\u2013 Improved page-load performance by 30% through database-query optimization and more efficient data access patterns."
+    },
+    {
+      "id": "b25",
+      "section": "skills",
+      "text": "\u2013 Worked across frontend implementation, backend integration, data modeling, and user-facing workflow design in a"
+    },
+    {
+      "id": "b26",
+      "section": "skills",
+      "text": "production-oriented web development setting."
+    },
+    {
+      "id": "b27",
+      "section": "projects",
+      "text": "Wayfarer: AI Job-Search Platform | FastAPI, React/TypeScript, Redis, ChromaDB, Ollama, Docker"
+    },
+    {
+      "id": "b28",
+      "section": "projects",
+      "text": "\u2013 Built a full-stack AI platform that parses resumes, ranks live job posts, scores resume\u2013job-description fit, and provides"
+    },
+    {
+      "id": "b29",
+      "section": "projects",
+      "text": "ATS-oriented feedback with human-in-the-loop review."
+    },
+    {
+      "id": "b30",
+      "section": "projects",
+      "text": "\u2013 Implemented Redis-backed caching and state management for LLM-powered job-matching workflows, supporting prompt"
+    },
+    {
+      "id": "b31",
+      "section": "projects",
+      "text": "reuse, rate-limit handling, and responsive processing of long-running tasks."
+    },
+    {
+      "id": "b32",
+      "section": "projects",
+      "text": "\u2013 Designed a retrieval pipeline combining in-process embeddings, vector search, hybrid relevance scoring, and graph-based"
+    },
+    {
+      "id": "b33",
+      "section": "projects",
+      "text": "resume memory to support token-efficient matching and explainable recommendations."
+    },
+    {
+      "id": "b34",
+      "section": "projects",
+      "text": "\u2013 Implemented a rate-limit-aware LLM router with NVIDIA NIM, OpenRouter, and Ollama providers, including fallback"
+    },
+    {
+      "id": "b35",
+      "section": "projects",
+      "text": "behavior and prompt caching for resilient inference across hosted and local models."
+    },
+    {
+      "id": "b36",
+      "section": "projects",
+      "text": "\u2013 Added configuration-driven connectors for 12 job boards and resume ingestion across 14 document formats using document"
+    },
+    {
+      "id": "b37",
+      "section": "projects",
+      "text": "parsing and OCR workflows."
+    },
+    {
+      "id": "b38",
+      "section": "projects",
+      "text": "LocalBrainNotes: Local Agentic RAG Assistant | LangGraph, ChromaDB, LLM Evaluation, Ollama, Python"
+    },
+    {
+      "id": "b39",
+      "section": "projects",
+      "text": "\u2013 Built a local-first, Obsidian-like agentic RAG assistant over Markdown vaults, combining LangGraph orchestration,"
+    },
+    {
+      "id": "b40",
+      "section": "projects",
+      "text": "ChromaDB retrieval, and Ollama-based local inference."
+    },
+    {
+      "id": "b41",
+      "section": "projects",
+      "text": "\u2013 Built a repeatable local LLM evaluation workflow using Ollama to compare agentic RAG responses across retrieval and"
+    },
+    {
+      "id": "b42",
+      "section": "projects",
+      "text": "prompting configurations, assessing relevance, grounding, consistency, and failure cases."
+    },
+    {
+      "id": "b43",
+      "section": "projects",
+      "text": "\u2013 Focused the system on private knowledge access without requiring cloud-hosted model inference, demonstrating practical"
+    },
+    {
+      "id": "b44",
+      "section": "projects",
+      "text": "retrieval, agent orchestration, and local deployment trade-offs."
+    },
+    {
+      "id": "b45",
+      "section": "projects",
+      "text": "Viral Clipper: Local GenAI Video Automation | Ollama, Gemma 3, WhisperX, PyQt6, FFmpeg, NVENC, CUDA"
+    },
+    {
+      "id": "b46",
+      "section": "projects",
+      "text": "\u2013 Developed an offline video-automation platform that uses LLM analysis to identify and extract high-value moments from"
+    },
+    {
+      "id": "b47",
+      "section": "projects",
+      "text": "long-form videos while keeping media processing local and privacy-preserving."
+    },
+    {
+      "id": "b48",
+      "section": "projects",
+      "text": "\u2013 Implemented batch processing for 100+ parallel workflows, AI-assisted 9:16 reframing with face-centered composition, and"
+    },
+    {
+      "id": "b49",
+      "section": "projects",
+      "text": "animated word-level captions for short-form content generation."
+    },
+    {
+      "id": "b50",
+      "section": "projects",
+      "text": "\u2013 Integrated WhisperX, FFmpeg, NVENC hardware encoding, PyQt6, and CUDA acceleration into a local desktop pipeline"
+    },
+    {
+      "id": "b51",
+      "section": "projects",
+      "text": "for transcription, clipping, reframing, caption rendering, and export."
+    },
+    {
+      "id": "b52",
+      "section": "projects",
+      "text": "Achievements & Publications"
+    },
+    {
+      "id": "b53",
+      "section": "projects",
+      "text": "Kaggle Competition: Rank 158/4,506 (Top 3.5%) in the Hull Tactical Market Prediction Challenge, 2025."
+    },
+    {
+      "id": "b54",
+      "section": "projects",
+      "text": "Research Publication: Customer Segmentation using K-Means clustering, published in IJNRD; applied the Elbow Method"
+    },
+    {
+      "id": "b55",
+      "section": "projects",
+      "text": "and Silhouette Analysis to select clusters from purchasing and demographic data."
+    },
+    {
+      "id": "b56",
+      "section": "projects",
+      "text": "Google Tunix Hackathon Participant, 2025."
+    },
+    {
+      "id": "b57",
+      "section": "projects",
+      "text": "Core Member, Art & Literature Club; organized 3 events during Karnataka Rajyotsava 2022."
+    },
+    {
+      "id": "b58",
+      "section": "certifications",
+      "text": "Power BI \u2014 Infosys Springboard"
+    },
+    {
+      "id": "b59",
+      "section": "certifications",
+      "text": "Cyber Security \u2014 Infosys Springboard"
+    },
+    {
+      "id": "b60",
+      "section": "certifications",
+      "text": "Hands-on Python \u2014 Coursera"
+    }
+  ],
+  "ats_visible_text": "Anubhav Sanket\nBengaluru, India\n(cid:131) +91 8789378076 # anubhavsanket22@gmail.com (cid:239) linkedin.com/in/anubhavsanket \u00a7 github.com/anubhavsanket\n\u00a2 kaggle.com/anubhavsanket (cid:128) anubhavsanket.github.io/portfolio\nProfessional Summary\nAI/ML Engineer building AI products end-to-end, from local LLM inference and RAG pipelines to deployed full-stack\napplications. Built privacy-first, offline-capable systems using Ollama, ChromaDB, LangGraph, FastAPI, React/TypeScript,\nDocker, WhisperX, FFmpeg, and CUDA. Strong focus on applied AI, developer tools, automation, model integration, and\nshipping production-oriented features for early-stage teams.\nSkills\nAI Engineering: LLMs, RAG, Agentic AI, LangGraph, Prompt Engineering, Embeddings, Vector Search, LLM Evaluation,\nOllama, ChromaDB, multi-provider LLM routing, prompt caching, human-in-the-loop systems\nMachine Learning: PyTorch, Transformers, scikit-learn, NLP, Computer Vision, WhisperX, OpenAI Whisper\nBackend / Systems: Python, FastAPI, REST APIs, PostgreSQL, MongoDB, Redis, SQL\nInfrastructure: Docker, Docker Compose, CUDA, NVIDIA GPU Inference, NVENC, Git, GitHub\nFrontend: React, TypeScript, JavaScript, PyQt6, Tauri, Gradio, Vite, Tailwind CSS\nMedia / Multimodal: FFmpeg, WhisperX, Audio Processing, Video Processing, Word-level Transcription, Subtitle\nGeneration, GPU-accelerated Media Pipelines\nAnalytics: Power BI, DAX, Excel, Pandas, NumPy, Portfolio Optimization\nProfessional Experience\nOaz Shakti Nov. 2025 \u2013 Mar. 2026\nMachine Learning / Power BI Intern Remote\n\u2013 Built an electrical-business analytics dashboard over 24K+ transactions worth 124.6M, tracking net revenue, gross profit of\n23.49M, and an 18.9% margin to support operational and financial decision-making.\n\u2013 Identified 8.4M in overdue payments through receivables analysis, surfacing a concrete cash-flow intervention area for the\nbusiness.\n\u2013 Developed and evaluated a quantitative asset-allocation solution for the Hull Tactical Market Prediction competition using\nPowell optimization, modified Sharpe-ratio maximization, volatility penalties, leverage bounds, and risk constraints.\n\u2013 Achieved Kaggle Rank 158/4,506, placing in the global Top 3.5%; packaged the solution and supporting analysis in a public\nGitHub repository.\nVarcons Technologies Pvt. Ltd. Aug. 2023 \u2013 Oct. 2023\nFull-stack Developer Bengaluru, India\n\u2013 Built and shipped a responsive ReactJS and MongoDB website for TechTune Motors with car-availability tracking,\nappointment scheduling, and real-time CRUD workflows.\n\u2013 Improved page-load performance by 30% through database-query optimization and more efficient data access patterns.\n\u2013 Worked across frontend implementation, backend integration, data modeling, and user-facing workflow design in a\nproduction-oriented web development setting.\nProjects\nWayfarer: AI Job-Search Platform | FastAPI, React/TypeScript, Redis, ChromaDB, Ollama, Docker\n\u2013 Built a full-stack AI platform that parses resumes, ranks live job posts, scores resume\u2013job-description fit, and provides\nATS-oriented feedback with human-in-the-loop review.\n\u2013 Implemented Redis-backed caching and state management for LLM-powered job-matching workflows, supporting prompt\nreuse, rate-limit handling, and responsive processing of long-running tasks.\n\u2013 Designed a retrieval pipeline combining in-process embeddings, vector search, hybrid relevance scoring, and graph-based\nresume memory to support token-efficient matching and explainable recommendations.\n\u2013 Implemented a rate-limit-aware LLM router with NVIDIA NIM, OpenRouter, and Ollama providers, including fallback\nbehavior and prompt caching for resilient inference across hosted and local models.\n\u2013 Added configuration-driven connectors for 12 job boards and resume ingestion across 14 document formats using document\nparsing and OCR workflows.\nLocalBrainNotes: Local Agentic RAG Assistant | LangGraph, ChromaDB, LLM Evaluation, Ollama, Python\n\u2013 Built a local-first, Obsidian-like agentic RAG assistant over Markdown vaults, combining LangGraph orchestration,\nChromaDB retrieval, and Ollama-based local inference.\n\u2013 Built a repeatable local LLM evaluation workflow using Ollama to compare agentic RAG responses across retrieval and\nprompting configurations, assessing relevance, grounding, consistency, and failure cases.\n\u2013 Focused the system on private knowledge access without requiring cloud-hosted model inference, demonstrating practical\nretrieval, agent orchestration, and local deployment trade-offs.\nViral Clipper: Local GenAI Video Automation | Ollama, Gemma 3, WhisperX, PyQt6, FFmpeg, NVENC, CUDA\n\u2013 Developed an offline video-automation platform that uses LLM analysis to identify and extract high-value moments from\nlong-form videos while keeping media processing local and privacy-preserving.\n\u2013 Implemented batch processing for 100+ parallel workflows, AI-assisted 9:16 reframing with face-centered composition, and\nanimated word-level captions for short-form content generation.\n\u2013 Integrated WhisperX, FFmpeg, NVENC hardware encoding, PyQt6, and CUDA acceleration into a local desktop pipeline\nfor transcription, clipping, reframing, caption rendering, and export.\nAchievements & Publications\n\u2022\nKaggle Competition: Rank 158/4,506 (Top 3.5%) in the Hull Tactical Market Prediction Challenge, 2025.\n\u2022 Research Publication: Customer Segmentation using K-Means clustering, published in IJNRD; applied the Elbow Method\nand Silhouette Analysis to select clusters from purchasing and demographic data.\n\u2022 Google Tunix Hackathon Participant, 2025.\n\u2022 Core Member, Art & Literature Club; organized 3 events during Karnataka Rajyotsava 2022.\nEducation\nDayananda Sagar Academy of Technology and Management (VTU) 2020 \u2013 2024\nB.E. in Artificial Intelligence and Machine Learning Bengaluru, India\nCertifications\n\u2022\nMicrosoft Certified in Data Engineering on Azure\n\u2022 Power BI \u2014 Infosys Springboard\n\u2022 Cyber Security \u2014 Infosys Springboard\n\u2022 Hands-on Python \u2014 Coursera",
+  "structural_issues": [],
+  "contact": {
+    "email": "anubhavsanket22@gmail.com",
+    "phone": "+91 8789378076",
+    "linkedin": "linkedin.com/in/anubhavsanket",
+    "github": "github.com/anubhavsanket",
+    "name": "Anubhav Sanket"
+  },
+  "raw_text": "Anubhav Sanket\nBengaluru, India\n(cid:131) +91 8789378076 # anubhavsanket22@gmail.com (cid:239) linkedin.com/in/anubhavsanket \u00a7 github.com/anubhavsanket\n\u00a2 kaggle.com/anubhavsanket (cid:128) anubhavsanket.github.io/portfolio\nProfessional Summary\nAI/ML Engineer building AI products end-to-end, from local LLM inference and RAG pipelines to deployed full-stack\napplications. Built privacy-first, offline-capable systems using Ollama, ChromaDB, LangGraph, FastAPI, React/TypeScript,\nDocker, WhisperX, FFmpeg, and CUDA. Strong focus on applied AI, developer tools, automation, model integration, and\nshipping production-oriented features for early-stage teams.\nSkills\nAI Engineering: LLMs, RAG, Agentic AI, LangGraph, Prompt Engineering, Embeddings, Vector Search, LLM Evaluation,\nOllama, ChromaDB, multi-provider LLM routing, prompt caching, human-in-the-loop systems\nMachine Learning: PyTorch, Transformers, scikit-learn, NLP, Computer Vision, WhisperX, OpenAI Whisper\nBackend / Systems: Python, FastAPI, REST APIs, PostgreSQL, MongoDB, Redis, SQL\nInfrastructure: Docker, Docker Compose, CUDA, NVIDIA GPU Inference, NVENC, Git, GitHub\nFrontend: React, TypeScript, JavaScript, PyQt6, Tauri, Gradio, Vite, Tailwind CSS\nMedia / Multimodal: FFmpeg, WhisperX, Audio Processing, Video Processing, Word-level Transcription, Subtitle\nGeneration, GPU-accelerated Media Pipelines\nAnalytics: Power BI, DAX, Excel, Pandas, NumPy, Portfolio Optimization\nProfessional Experience\nOaz Shakti Nov. 2025 \u2013 Mar. 2026\nMachine Learning / Power BI Intern Remote\n\u2013 Built an electrical-business analytics dashboard over 24K+ transactions worth 124.6M, tracking net revenue, gross profit of\n23.49M, and an 18.9% margin to support operational and financial decision-making.\n\u2013 Identified 8.4M in overdue payments through receivables analysis, surfacing a concrete cash-flow intervention area for the\nbusiness.\n\u2013 Developed and evaluated a quantitative asset-allocation solution for the Hull Tactical Market Prediction competition using\nPowell optimization, modified Sharpe-ratio maximization, volatility penalties, leverage bounds, and risk constraints.\n\u2013 Achieved Kaggle Rank 158/4,506, placing in the global Top 3.5%; packaged the solution and supporting analysis in a public\nGitHub repository.\nVarcons Technologies Pvt. Ltd. Aug. 2023 \u2013 Oct. 2023\nFull-stack Developer Bengaluru, India\n\u2013 Built and shipped a responsive ReactJS and MongoDB website for TechTune Motors with car-availability tracking,\nappointment scheduling, and real-time CRUD workflows.\n\u2013 Improved page-load performance by 30% through database-query optimization and more efficient data access patterns.\n\u2013 Worked across frontend implementation, backend integration, data modeling, and user-facing workflow design in a\nproduction-oriented web development setting.\nProjects\nWayfarer: AI Job-Search Platform | FastAPI, React/TypeScript, Redis, ChromaDB, Ollama, Docker\n\u2013 Built a full-stack AI platform that parses resumes, ranks live job posts, scores resume\u2013job-description fit, and provides\nATS-oriented feedback with human-in-the-loop review.\n\u2013 Implemented Redis-backed caching and state management for LLM-powered job-matching workflows, supporting prompt\nreuse, rate-limit handling, and responsive processing of long-running tasks.\n\u2013 Designed a retrieval pipeline combining in-process embeddings, vector search, hybrid relevance scoring, and graph-based\nresume memory to support token-efficient matching and explainable recommendations.\n\u2013 Implemented a rate-limit-aware LLM router with NVIDIA NIM, OpenRouter, and Ollama providers, including fallback\nbehavior and prompt caching for resilient inference across hosted and local models.\n\u2013 Added configuration-driven connectors for 12 job boards and resume ingestion across 14 document formats using document\nparsing and OCR workflows.\nLocalBrainNotes: Local Agentic RAG Assistant | LangGraph, ChromaDB, LLM Evaluation, Ollama, Python\n\u2013 Built a local-first, Obsidian-like agentic RAG assistant over Markdown vaults, combining LangGraph orchestration,\nChromaDB retrieval, and Ollama-based local inference.\n\u2013 Built a repeatable local LLM evaluation workflow using Ollama to compare agentic RAG responses across retrieval and\nprompting configurations, assessing relevance, grounding, consistency, and failure cases.\n\u2013 Focused the system on private knowledge access without requiring cloud-hosted model inference, demonstrating practical\nretrieval, agent orchestration, and local deployment trade-offs.\nViral Clipper: Local GenAI Video Automation | Ollama, Gemma 3, WhisperX, PyQt6, FFmpeg, NVENC, CUDA\n\u2013 Developed an offline video-automation platform that uses LLM analysis to identify and extract high-value moments from\nlong-form videos while keeping media processing local and privacy-preserving.\n\u2013 Implemented batch processing for 100+ parallel workflows, AI-assisted 9:16 reframing with face-centered composition, and\nanimated word-level captions for short-form content generation.\n\u2013 Integrated WhisperX, FFmpeg, NVENC hardware encoding, PyQt6, and CUDA acceleration into a local desktop pipeline\nfor transcription, clipping, reframing, caption rendering, and export.\nAchievements & Publications\n\u2022\nKaggle Competition: Rank 158/4,506 (Top 3.5%) in the Hull Tactical Market Prediction Challenge, 2025.\n\u2022 Research Publication: Customer Segmentation using K-Means clustering, published in IJNRD; applied the Elbow Method\nand Silhouette Analysis to select clusters from purchasing and demographic data.\n\u2022 Google Tunix Hackathon Participant, 2025.\n\u2022 Core Member, Art & Literature Club; organized 3 events during Karnataka Rajyotsava 2022.\nEducation\nDayananda Sagar Academy of Technology and Management (VTU) 2020 \u2013 2024\nB.E. in Artificial Intelligence and Machine Learning Bengaluru, India\nCertifications\n\u2022\nMicrosoft Certified in Data Engineering on Azure\n\u2022 Power BI \u2014 Infosys Springboard\n\u2022 Cyber Security \u2014 Infosys Springboard\n\u2022 Hands-on Python \u2014 Coursera"
+}

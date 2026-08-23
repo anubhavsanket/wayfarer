@@ -174,3 +174,9 @@ class TestLLMCacheKey:
         key1 = LLMRouter._cache_key(messages, "model-a", "0.2", "ollama")
         key2 = LLMRouter._cache_key(messages, "model-a", "0.2", "nvidia")
         assert key1 != key2
+
+class TestClassificationCache:
+    def test_classification_cache_exists(self):
+        from backend.app.utils.cache import classification_cache
+        assert classification_cache.namespace == "classify"
+        assert classification_cache.ttl > 0

@@ -22,6 +22,7 @@ from typing import Any
 
 from ..config import settings
 from ..llm_router import extract_json, router
+from ..utils.cache import classification_cache, make_hash_key
 from ..models.job_boards import JobBoardConnector, load_registry
 from ..models.schemas import (
     AggregateGap,
@@ -202,6 +203,11 @@ Job posting:
 
 async def _classify_experience(jd_text: str) -> dict[str, Any]:
     """Classify experience level using a small local LLM (qwen3:0.6b)."""
+    key = make_hash_key(jd_text)
+    cached = await classification_cache.get(key)
+    if cached:
+        return cached
+
     VALID_LEVELS = {"fresher", "junior", "mid", "senior", "unclear"}
     try:
         resp = await router.chat(
@@ -214,11 +220,13 @@ async def _classify_experience(jd_text: str) -> dict[str, Any]:
         level = result.get("experience_level", "unclear")
         if level not in VALID_LEVELS:
             level = "unclear"
-        return {
+        final_result = {
             "experience_level": level,
             "min_experience_years": result.get("min_experience_years"),
             "confidence": result.get("confidence", 0.0),
         }
+        await classification_cache.set(key, final_result)
+        return final_result
     except Exception as exc:
         logger.debug("Experience classification failed: %s", exc)
         return {"experience_level": "unclear", "min_experience_years": None, "confidence": 0.0}
