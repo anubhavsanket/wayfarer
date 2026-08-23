@@ -80,8 +80,8 @@ def test_llm_router_header_overrides(monkeypatch):
     # Ensure settings has no key for nvidia
     monkeypatch.setattr(settings, "NVIDIA_NIM_API_KEY", None)
 
-    # Initially without keys, nvidia model is None
-    assert router._model_for("nvidia", "simple") is None
+    # _model_for resolves model name from settings (independent of credentials)
+    assert router._model_for("nvidia", "simple") == "meta/llama-3.1-8b-instruct"
 
     token = request_overrides_var.set(
         RequestOverrides(

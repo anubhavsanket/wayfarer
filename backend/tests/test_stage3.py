@@ -309,9 +309,10 @@ class TestLLMRouterModelOverride:
         from backend.app.llm_router import router
         from backend.app import config
 
-        # No NVIDIA key present (tests strip it) — override must be rejected
+        # No NVIDIA key present (tests strip it) — _model_for returns override
+        # (credential gating happens in _provider_available, not _model_for)
         monkeypatch.setattr(config.settings, "NVIDIA_NIM_API_KEY", None)
-        assert router._model_for("nvidia", "simple", override="gpt-4o") is None
+        assert router._model_for("nvidia", "simple", override="gpt-4o") == "gpt-4o"
 
         # Ollama is local — no credentials needed, override passes through
         assert router._model_for("ollama", "simple", override="qwen3:0.6b") == "qwen3:0.6b"

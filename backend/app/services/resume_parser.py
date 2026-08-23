@@ -188,7 +188,7 @@ def _try_unstructured(file_path: str) -> ParsedResume | None:
     # Contact extraction
     contact = _extract_contact(all_text_lines)
 
-    flat_sections = {k: "\n".join(v) for k, v in sections.items()}
+    flat_sections = {k: v for k, v in sections.items()}
     raw_text = "\n".join(all_text_lines)
 
     return ParsedResume(
@@ -290,10 +290,9 @@ def _fallback_parse(file_path: str) -> ParsedResume:
     sections, bullets = _parse_sections(raw_lines)
     contact = _extract_contact(raw_lines)
     raw_text = "\n".join(raw_lines)
-    flat_sections = {k: "\n".join(v) for k, v in sections.items()}
 
     return ParsedResume(
-        sections=flat_sections,
+        sections=sections,
         bullets=bullets,
         ats_visible_text=ats_text,
         raw_text=raw_text,
@@ -309,7 +308,7 @@ def _fallback_parse(file_path: str) -> ParsedResume:
 @dataclass
 class ParsedResume:
     """Structured resume data produced by ``parse_resume``."""
-    sections: dict[str, str] = field(default_factory=dict)
+    sections: dict[str, list[str]] = field(default_factory=dict)
     bullets: list[ResumeBullet] = field(default_factory=list)
     ats_visible_text: str = ""
     raw_text: str = ""

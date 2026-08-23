@@ -126,15 +126,15 @@ class LLMRouter:
                 logger.warning("Provider %s rate-limited locally, skipping", prov)
                 continue
 
-        # Check Redis cache before making the provider call
-        cache_key = self._cache_key(
-            json.dumps(messages, sort_keys=True, default=str),
-            resolved_model or "",
-            str(temperature),
-            prov,
-            json.dumps(tools, sort_keys=True) if tools else "",
-        )
-        logger.debug("Checking LLM Cache (Key: %s)", cache_key[:16])
+            # Check Redis cache before making the provider call
+            cache_key = self._cache_key(
+                json.dumps(messages, sort_keys=True, default=str),
+                resolved_model or "",
+                str(temperature),
+                prov,
+                json.dumps(tools, sort_keys=True) if tools else "",
+            )
+            logger.debug("Checking LLM Cache (Key: %s)", cache_key[:16])
 
             try:
                 cached = await llm_cache.get(cache_key)
@@ -237,7 +237,6 @@ class LLMRouter:
     def _model_for(self, provider: str, tier: str, override: str | None = None) -> str | None:
         """Resolve the model for a given provider+tier."""
         overrides = get_request_overrides()
-        # Override has lowest priority: explicit provider/tier args first
         resolved_provider = provider or (overrides.llm_provider if overrides else settings.LLM_PROVIDER)
         
         # If model override is given, use it
@@ -246,8 +245,6 @@ class LLMRouter:
             
         # Check for model from request overrides
         if overrides:
-            if overrides.llm_model:
-                return overrides.llm_model
             if resolved_provider == "custom" and overrides.custom_model:
                 return overrides.custom_model
             if resolved_provider == "lmstudio" and overrides.lmstudio_model:
@@ -263,14 +260,6 @@ class LLMRouter:
         if overrides.llm_provider:
             return [overrides.llm_provider]
         return list(settings.PROVIDER_RATE_LIMITS.keys())
-
-    def _model_for(self, tier: str, overrides: Any) -> str | None:
-        if isinstance(overrides, str):
-            # Compatibility for tests passing just a model name string
-            return overrides
-        if hasattr(overrides, "llm_model") and overrides.llm_model:
-            return overrides.llm_model
-        return settings.get_model_for_tier(tier)
 
     def _provider_available(self, provider: str, overrides) -> bool:
         if provider == "nvidia":
