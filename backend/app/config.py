@@ -69,10 +69,10 @@ class Settings(BaseSettings):
     # ── Embedding ───────────────────────────────────────────────────────
     EMBEDDING_MODEL: str = "nomic-embed-text"
 
-    # ── ChromaDB ────────────────────────────────────────────────────────
-    CHROMA_HOST: str = "chromadb"
-    CHROMA_PORT: int = 8001
-    CHROMA_PERSIST_DIR: str = "./chroma_db"
+    # ── Qdrant ──────────────────────────────────────────────────────────
+    QDRANT_HOST: str = "qdrant"
+    QDRANT_PORT: int = 6333
+    QDRANT_GRPC_PORT: int = 6334
 
     # ── Redis ───────────────────────────────────────────────────────────
     REDIS_URL: str = "redis://redis:6379"
@@ -82,10 +82,14 @@ class Settings(BaseSettings):
     RESUME_SECTIONS_COLLECTION: str = "resume_sections"
     JOB_POSTINGS_COLLECTION: str = "job_postings"
 
-    # ── Cache ───────────────────────────────────────────────────────────
-    CONTENT_HASH_CACHE_DIR: str = "./cache/content_hashes"
+    # ── Cache (Redis-backed) ───────────────────────────────────────────
+    CONTENT_HASH_CACHE_DIR: str = "./cache/content_hashes"  # legacy, unused
     MAX_CACHE_ENTRIES: int = 10000
     CACHE_TTL_HOURS: int = 48
+    CACHE_TTL_LLM_SECONDS: int = 86400       # 24 h — LLM responses
+    CACHE_TTL_EMBEDDING_SECONDS: int = 604800  # 7 d  — deterministic embeddings
+    CACHE_TTL_PAGE_SECONDS: int = 172800      # 48 h — fetched page content
+    CACHE_TTL_QUERY_SECONDS: int = 172800     # 48 h — synthesized query answers
 
     # ── Job search ──────────────────────────────────────────────────────
     DEFAULT_MAX_SOURCES: int = 5

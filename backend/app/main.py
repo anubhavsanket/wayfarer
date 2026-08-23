@@ -48,12 +48,12 @@ refresh_worker_task: asyncio.Task | None = None
 refresh_stop_event: asyncio.Event | None = None
 
 
-async def _check_chromadb() -> DependencyStatus:
+async def _check_qdrant() -> DependencyStatus:
     try:
-        await asyncio.to_thread(vector_store._client.heartbeat)
-        return DependencyStatus(name="chromadb", status="up", detail="connected")
+        await asyncio.to_thread(vector_store._client.get_collections)
+        return DependencyStatus(name="qdrant", status="up", detail="connected")
     except Exception as exc:
-        return DependencyStatus(name="chromadb", status="down", detail=str(exc))
+        return DependencyStatus(name="qdrant", status="down", detail=str(exc))
 
 
 async def _http_get(url: str, headers: dict | None = None) -> httpx.Response:
@@ -129,13 +129,33 @@ async def lifespan(app: FastAPI):
     # Startup
     logger.info("Starting Wayfarer API...")
     http_client = httpx.AsyncClient(timeout=settings.REQUEST_TIMEOUT)
-    redis_client = redis.from_url(settings.REDIS_URL, decode_responses=True)
 
-    # Ensure ChromaDB collections exist
+    # Create Redis client with a connection timeout so DNS resolution of
+    # the Docker hostname ('redis') doesn't block startup when running locally.
+    try:
+        redis_client = await asyncio.wait_for(
+            asyncio.to_thread(
+                redis.from_url, settings.REDIS_URL, decode_responses=True
+            ),
+            timeout=5.0,
+        )
+    except (asyncio.TimeoutError, Exception) as exc:
+        logger.warning("Redis client creation failed (%s); running without Redis", exc)
+        redis_client = None
+
+    # Initialise Redis cache (LLM responses, embeddings, pages, queries)
+    from .utils.cache import init_cache
+    await init_cache()
+
+    # Initialise LlamaIndex RAG settings
+    from .core.rag_engine import init_rag_settings
+    init_rag_settings()
+
+    # Ensure Qdrant collections exist
     for name in vector_store.COLLECTIONS:
         try:
-            col = vector_store._ensure_collection(name)
-            logger.info("Collection '%s' ready (count=%d)", name, col.count())
+            vector_store._ensure_collection(name)
+            logger.info("Collection '%s' ready", name)
         except Exception as exc:
             logger.warning("Collection '%s' init failed: %s", name, exc)
 
@@ -172,6 +192,8 @@ async def lifespan(app: FastAPI):
             await refresh_worker_task
         except asyncio.CancelledError:
             pass
+    from .utils.cache import close_cache
+    await close_cache()
     await llm_router.aclose()
     if http_client:
         await http_client.aclose()
@@ -237,7 +259,7 @@ app.add_middleware(
 async def health() -> HealthResponse:
     """Dependency health check."""
     results = await asyncio.gather(
-        _check_chromadb(),
+        _check_qdrant(),
         _check_ollama(),
         _check_redis(),
         _check_nvidia_nim(),

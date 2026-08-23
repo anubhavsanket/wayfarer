@@ -1,132 +1,210 @@
-"""Content-hash memoization utility with TTL.
+"""Redis-backed content-hash memoization cache with TTL.
 
 Used by all three stages:
-- Stage 1: cache search results by query hash
-- Stage 2: cache resume+JD checks by ``hash(resume_version + jd_text)``
-- Stage 3: cache match scores by the same composite key
+- Stage 1: cache search results by query hash, fetched page content by URL hash
+- Stage 2: cache LLM responses (keyword extraction, bullet rewrites) and embeddings
+- Stage 3: cache LLM responses (classification), embeddings (JD ↔ resume similarity)
 
-Stores a flat JSON file per cache namespace (directory per stage) with
-structure::
+Stores JSON-serialisable values as Redis string keys with per-namespace TTLs.
+All operations are async and fail gracefully — a Redis outage or connection
+failure returns cache misses (``None`` / ``False``) so the rest of the
+pipeline stays functional.
 
-    {
-      "<hash>": {"value": ..., "ts": <unix_epoch>}
-    }
+Usage::
 
-Eviction is lazy (on read) to keep it simple — the cache file is
-rewritten when stale entries are pruned.
+    from .utils.cache import llm_cache, embed_cache, page_cache, query_cache
+
+    # Check before an expensive call
+    cached = await llm_cache.get(key)
+    if cached is not None:
+        return cached
+
+    result = await expensive_call()
+    await llm_cache.set(key, result)
 """
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import json
+import logging
 import time
-from dataclasses import dataclass
-from pathlib import Path
-from typing import Any, Generic, TypeVar
+from typing import Any
+
+import redis.asyncio as aioredis
 
 from ..config import settings
 
-T = TypeVar("T")
+logger = logging.getLogger(__name__)
+
+# ---------------------------------------------------------------------------
+# Module-level Redis connection (lazy, initialised on first use)
+# ---------------------------------------------------------------------------
+
+_redis: aioredis.Redis | None = None
 
 
-@dataclass
-class CacheEntry(Generic[T]):
-    value: T
-    ts: float
+def _get_redis() -> aioredis.Redis | None:
+    """Return the Redis client, creating it lazily on first call."""
+    global _redis
+    if _redis is not None:
+        return _redis
+    try:
+        _redis = aioredis.from_url(
+            settings.REDIS_URL,
+            decode_responses=True,
+            socket_connect_timeout=3,
+            socket_timeout=5,
+        )
+        return _redis
+    except Exception as exc:
+        logger.warning("Redis connection failed: %s", exc)
+        return None
 
 
-class ContentHashCache:
-    """Simple file-backed memoization cache keyed by content hash."""
+async def init_cache() -> None:
+    """Proactively initialise the Redis connection (called from lifespan).
 
-    def __init__(self, namespace: str, ttl_seconds: int | None = None) -> None:
+    Logs a warning if Redis is unreachable but does NOT raise — the app
+    continues without caching.
+    """
+    client = _get_redis()
+    if client is not None:
+        try:
+            await client.ping()
+            logger.info("Redis cache connected: %s", settings.REDIS_URL)
+        except Exception as exc:
+            logger.warning("Redis ping failed (%s); caching disabled", exc)
+            # Reset so _get_redis() re-attempts on next call
+            global _redis
+            _redis = None
+
+
+async def close_cache() -> None:
+    """Gracefully close the Redis connection."""
+    global _redis
+    if _redis is not None:
+        try:
+            await _redis.aclose()
+        except Exception:
+            pass
+        _redis = None
+
+
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
+
+def make_hash_key(*parts: str | bytes) -> str:
+    """Deterministic SHA-256 hash key from string/bytes parts."""
+    h = hashlib.sha256()
+    for p in parts:
+        h.update(p if isinstance(p, bytes) else p.encode("utf-8"))
+    return h.hexdigest()
+
+
+def _serialise(value: Any) -> str:
+    """JSON-serialise a cache value (handles Pydantic models, datetime, etc.)."""
+    if hasattr(value, "model_dump"):
+        return json.dumps(value.model_dump())
+    return json.dumps(value, default=str)
+
+
+def _deserialise(raw: str) -> Any:
+    """JSON-deserialise a cached value."""
+    return json.loads(raw)
+
+
+# ---------------------------------------------------------------------------
+# RedisCache
+# ---------------------------------------------------------------------------
+
+class RedisCache:
+    """Async Redis-backed key-value cache with per-namespace TTL.
+
+    All methods are fire-and-forget safe: any Redis error is logged and
+    treated as a cache miss so callers can fall through to the real source.
+    """
+
+    def __init__(self, namespace: str, ttl_seconds: int) -> None:
         self.namespace = namespace
-        self.ttl = ttl_seconds or (settings.CACHE_TTL_HOURS * 3600)
-        self._dir = Path(settings.CONTENT_HASH_CACHE_DIR) / namespace
-        self._dir.mkdir(parents=True, exist_ok=True)
-        self._path = self._dir / "cache.json"
-        self._data: dict[str, CacheEntry[Any]] = {}
-        self._load()
+        self.ttl = ttl_seconds
 
-    def _load(self) -> None:
-        if not self._path.exists():
-            return
-        try:
-            raw = json.loads(self._path.read_text())
-            for k, v in raw.items():
-                if isinstance(v, dict) and "value" in v and "ts" in v:
-                    self._data[k] = CacheEntry(value=v["value"], ts=v["ts"])
-        except (json.JSONDecodeError, OSError):
-            # Corrupt cache file — start fresh
-            self._data = {}
+    def _key(self, key: str) -> str:
+        """Full Redis key including namespace prefix."""
+        return f"wayfarer:{self.namespace}:{key}"
 
-    def _save(self) -> None:
-        serialisable = {k: {"value": v.value, "ts": v.ts} for k, v in self._data.items()}
-        try:
-            self._path.write_text(json.dumps(serialisable))
-        except OSError as exc:
-            # Non-fatal — log and continue
-            import logging
-            logging.getLogger(__name__).warning("Failed to write cache: %s", exc)
+    # -- async API -----------------------------------------------------------
 
-    @staticmethod
-    def _hash(*parts: str | bytes) -> str:
-        h = hashlib.sha256()
-        for p in parts:
-            h.update(p if isinstance(p, bytes) else p.encode("utf-8"))
-        return h.hexdigest()
-
-    def make_key(self, *parts: str | bytes) -> str:
-        return self._hash(*parts)
-
-    def get(self, key: str) -> Any | None:
-        """Retrieve a value if present and not expired."""
-        entry = self._data.get(key)
-        if entry is None:
+    async def get(self, key: str) -> Any | None:
+        """Return the cached value or ``None`` on miss / error."""
+        client = _get_redis()
+        if client is None:
             return None
-        if time.time() - entry.ts > self.ttl:
-            # Expired — remove and report miss
-            self._data.pop(key, None)
-            self._save()
+        try:
+            raw = await client.get(self._key(key))
+            if raw is None:
+                return None
+            return _deserialise(raw)
+        except Exception as exc:
+            logger.debug("Redis GET %s failed: %s", self._key(key), exc)
             return None
-        return entry.value
 
-    def set(self, key: str, value: Any) -> None:
-        """Store a value with the current timestamp."""
-        self._data[key] = CacheEntry(value=value, ts=time.time())
-        # Enforce max entries (FIFO eviction)
-        if len(self._data) > settings.MAX_CACHE_ENTRIES:
-            oldest = min(self._data.items(), key=lambda kv: kv[1].ts)[0]
-            self._data.pop(oldest, None)
-        self._save()
-
-    def delete(self, key: str) -> bool:
-        if key in self._data:
-            self._data.pop(key)
-            self._save()
+    async def set(self, key: str, value: Any) -> bool:
+        """Store a value. Returns True on success, False on error."""
+        client = _get_redis()
+        if client is None:
+            return False
+        try:
+            await client.set(self._key(key), _serialise(value), ex=self.ttl)
             return True
-        return False
+        except Exception as exc:
+            logger.debug("Redis SET %s failed: %s", self._key(key), exc)
+            return False
 
-    def clear(self) -> int:
-        count = len(self._data)
-        self._data.clear()
-        self._save()
-        return count
+    async def delete(self, key: str) -> bool:
+        """Remove a key. Returns True if the key existed."""
+        client = _get_redis()
+        if client is None:
+            return False
+        try:
+            return bool(await client.delete(self._key(key)))
+        except Exception as exc:
+            logger.debug("Redis DEL %s failed: %s", self._key(key), exc)
+            return False
 
-    def prune_expired(self) -> int:
-        """Remove all expired entries. Returns number removed."""
-        now = time.time()
-        before = len(self._data)
-        self._data = {
-            k: v for k, v in self._data.items()
-            if now - v.ts <= self.ttl
-        }
-        removed = before - len(self._data)
-        if removed:
-            self._save()
-        return removed
+    async def exists(self, key: str) -> bool:
+        client = _get_redis()
+        if client is None:
+            return False
+        try:
+            return bool(await client.exists(self._key(key)))
+        except Exception:
+            return False
+
+    async def clear(self) -> int:
+        """Delete all keys in this namespace. Returns count deleted."""
+        client = _get_redis()
+        if client is None:
+            return 0
+        try:
+            pattern = f"wayfarer:{self.namespace}:*"
+            count = 0
+            async for k in client.scan_iter(match=pattern, count=200):
+                await client.delete(k)
+                count += 1
+            return count
+        except Exception as exc:
+            logger.debug("Redis CLEAR %s failed: %s", self.namespace, exc)
+            return 0
 
 
-# Pre-configured cache instances for each stage
-search_cache = ContentHashCache("search", ttl_seconds=48 * 3600)   # 48h
-resume_cache = ContentHashCache("resume", ttl_seconds=72 * 3600)   # 72h
-jobs_cache = ContentHashCache("jobs", ttl_seconds=24 * 3600)       # 24h
+# ---------------------------------------------------------------------------
+# Pre-configured cache instances
+# ---------------------------------------------------------------------------
+# TTLs are configured in Settings (config.py) and converted to seconds here.
+
+llm_cache = RedisCache("llm", ttl_seconds=settings.CACHE_TTL_LLM_SECONDS)
+embed_cache = RedisCache("embed", ttl_seconds=settings.CACHE_TTL_EMBEDDING_SECONDS)
+page_cache = RedisCache("pages", ttl_seconds=settings.CACHE_TTL_PAGE_SECONDS)
+query_cache = RedisCache("queries", ttl_seconds=settings.CACHE_TTL_QUERY_SECONDS)

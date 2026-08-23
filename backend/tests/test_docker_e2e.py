@@ -76,13 +76,13 @@ class TestHealth:
         assert "status" in data
         assert "dependencies" in data
         deps = {d["name"] for d in data["dependencies"]}
-        assert "chromadb" in deps
+        assert "qdrant" in deps
         assert "ollama" in deps
 
-    def test_health_chromadb_is_up(self):
+    def test_health_qdrant_is_up(self):
         data = api("get", "/health").json()
-        chromadb = next(d for d in data["dependencies"] if d["name"] == "chromadb")
-        assert chromadb["status"] == "up"
+        qdrant = next(d for d in data["dependencies"] if d["name"] == "qdrant")
+        assert qdrant["status"] == "up"
 
 
 class TestSearch:

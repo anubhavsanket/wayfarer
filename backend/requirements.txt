@@ -1,8 +1,4 @@
-# Wayfarer backend dependencies
-# Inference is routed via httpx to NVIDIA NIM / OpenRouter / Ollama APIs.
-# Embeddings use Ollama's nomic-embed-text (pulled via `ollama pull`, not pip).
-
-# API framework
+# Backend dependencies
 fastapi==0.115.6
 uvicorn[standard]==0.34.0
 python-multipart==0.0.18
@@ -12,22 +8,28 @@ pydantic==2.10.4
 pydantic-settings==2.7.1
 PyYAML==6.0.2
 
-# HTTP client (LLM router, search APIs, board connectors)
-httpx==0.28.1
+# HTTP client
+httpx==0.27.2
 
 # Vector store + embeddings
-chromadb==0.5.23
+qdrant-client==1.12.1
 
 # Resume parsing (Stage 2)
-pdfplumber==0.11.4
-python-docx==1.1.2
+unstructured==0.16.12
 pytesseract==0.3.13
 
-# Web scraping (Stage 1)
+# Web scraping
 crawl4ai==0.6.2
 
-# Queue / background jobs (Stage 3 refresh)
+# Queue / background jobs
 redis[hiredis]==5.2.1
+
+# RAG Framework
+llama-index-core>=0.12.0,<0.13.0
+llama-index-embeddings-ollama>=0.4.0,<0.5.0
+llama-index-llms-ollama>=0.4.0,<0.5.0
+llama-index-vector-stores-qdrant>=0.4.0,<0.5.0
+ollama>=0.3.1,<0.4.0
 
 # Testing
 pytest==8.3.4

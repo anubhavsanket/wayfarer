@@ -19,7 +19,7 @@ import logging
 import re
 from typing import Any
 
-from ..llm_router import router, extract_json
+from ..llm_router import router, extract_json, EXTRACT_KEYWORDS_TOOL, extract_tool_response
 from ..models.schemas import (
     ConfidenceTier,
     KeywordGap,
@@ -52,9 +52,10 @@ async def _extract_jd_keywords(jd_text: str) -> list[str]:
             messages=[{"role": "user", "content": prompt}],
             tier="simple",
             max_tokens=512,
-            json_mode=True,
+            tools=[EXTRACT_KEYWORDS_TOOL],
+            tool_choice="auto",
         )
-        data = extract_json(resp["content"])
+        data = extract_tool_response(resp)
         if isinstance(data, dict):
             data = data.get("keywords", data.get("skills", []))
         if isinstance(data, str):

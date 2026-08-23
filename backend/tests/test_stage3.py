@@ -286,11 +286,11 @@ class TestLLMRouterModelOverride:
         captured: dict = {}
 
         async def fake_call_provider(
-            provider, model, messages, *, max_tokens, temperature, cache_control, json_mode
+            provider, model, messages, *, max_tokens, temperature, cache_control, json_mode, tools=None, tool_choice=None
         ):
             captured["provider"] = provider
             captured["model"] = model
-            return {"content": "ok", "provider": provider, "model": model, "cached": False}
+            return {"content": "ok", "provider": provider, "model": model, "cached": False, "tool_calls": None}
 
         monkeypatch.setattr(router, "_call_provider", fake_call_provider)
 

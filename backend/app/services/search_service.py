@@ -14,24 +14,19 @@ without re-fetching (FR1.5 / acceptance criterion #3).
 from __future__ import annotations
 
 import logging
-from datetime import datetime, timezone
 from typing import Any
 
 from ..llm_router import router, extract_json
-from ..config import settings
 from ..models.schemas import Citation, SearchResponse
+from ..utils.cache import make_hash_key, page_cache, query_cache
 from .search_api import SearchResultItem, run_search, SearchAPIError
 from .web_fetch import page_fetcher, FetchResult
 
 logger = logging.getLogger(__name__)
 
-# Cache key prefix for search results, TTL from config (48h)
-SEARCH_CACHE_COLLECTION = settings.SEARCH_CACHE_COLLECTION
-
 
 def _query_cache_key(query: str) -> str:
-    from ..vector_store import store
-    return store._content_hash(query.strip().lower())
+    return make_hash_key(query.strip().lower())
 
 
 async def _decompose_query(query: str) -> list[str]:
@@ -74,27 +69,26 @@ async def _dedupe_results(items: list[SearchResultItem]) -> list[SearchResultIte
 
 
 async def _fetch_and_cache(items: list[SearchResultItem]) -> dict[str, FetchResult]:
-    """Fetch top-N pages, storing fetched markdown in ChromaDB ``search_cache``.
+    """Fetch top-N pages, storing fetched markdown in Redis ``page_cache``.
 
     Returns a map url → FetchResult. Pages already in the cache (within TTL)
     are reused without re-fetching.
     """
-    from ..vector_store import store
-
     results: dict[str, FetchResult] = {}
     urls = [i.url for i in items if i.url]
     if not urls:
         return results
 
-    # Check cache first
-    cache_ids = [store._content_hash(u) for u in urls]
-    cached = store.get(SEARCH_CACHE_COLLECTION, cache_ids)
-    cached_docs = cached.get("documents") or []
-    cached_urls = {i: u for i, u in enumerate(urls)}
-    cached_hits: dict[str, str] = {}  # url -> markdown
-    for i, doc in enumerate(cached_docs):
-        if doc:
-            cached_hits[cached_urls.get(i, "")] = doc
+    # Check page cache (Redis key-value by URL hash)
+    cache_keys = [make_hash_key(u) for u in urls]
+    cached_hits: dict[str, str] = {}  # url → markdown
+    for url, key in zip(urls, cache_keys):
+        cached_md = await page_cache.get(key)
+        if cached_md:
+            logger.info("Page cache HIT (URL: %s...)", url[:30])
+            cached_hits[url] = cached_md
+        else:
+            logger.info("Page cache MISS (URL: %s...)", url[:30])
 
     to_fetch = [u for u in urls if u not in cached_hits]
     logger.info("Crawl4AI fetching %d/%d URLs (cache hit for %d)",
@@ -103,31 +97,16 @@ async def _fetch_and_cache(items: list[SearchResultItem]) -> dict[str, FetchResu
     # Fetch uncached pages
     if to_fetch:
         fetched = await page_fetcher.fetch_many(to_fetch)
-        # Store successful fetches in cache.
-        # nomic-embed-text has a 2048-token input limit (~4000 chars);
-        # the search cache doesn't need semantic search, only key-value
-        # lookup, so we truncate aggressively before embedding.
+        # Store successful fetches in Redis cache.
+        # Truncate aggressively to keep Redis memory usage reasonable.
         MAX_CACHE_CHARS = 3500
-        fresh_docs, fresh_ids, fresh_metas = [], [], []
         for fr in fetched:
             if fr.success and fr.markdown.strip():
-                fresh_docs.append(fr.markdown[:MAX_CACHE_CHARS])
-                fresh_ids.append(store._content_hash(fr.url))
-                fresh_metas.append({
-                    "url": fr.url,
-                    "title": fr.title[:200],
-                    "fetched_at": datetime.now(timezone.utc).isoformat(),
-                })
-        if fresh_docs:
-            try:
-                store.upsert(
-                    SEARCH_CACHE_COLLECTION,
-                    fresh_docs,
-                    ids=fresh_ids,
-                    metadatas=fresh_metas,
-                )
-            except Exception as exc:
-                logger.warning("Fetch cache write failed: %s", exc)
+                key = make_hash_key(fr.url)
+                try:
+                    await page_cache.set(key, fr.markdown[:MAX_CACHE_CHARS])
+                except Exception as exc:
+                    logger.warning("Fetch cache write failed: %s", exc)
         for fr in fetched:
             results[fr.url] = fr
 
@@ -208,27 +187,15 @@ async def _synthesize(
 
 async def search(query: str, max_sources: int = 5) -> SearchResponse:
     """Run the full Stage 1 search pipeline and return a ``SearchResponse``."""
-    from ..vector_store import store
 
     # 1. Cache check — repeated identical query within TTL returns cached answer
     cache_key = _query_cache_key(query)
-    cached = store.get(SEARCH_CACHE_COLLECTION, [cache_key])
-    if cached.get("documents") and cached["documents"][0]:
-        cached_answer = cached["documents"][0]
-        meta = (cached.get("metadatas") or [{}])[0] or {}
-        logger.info("Search cache hit for query: %s", query)
-        # Metadata stores sub_queries as a comma-joined string (ChromaDB
-        # only accepts scalar metadata); split it back into a list here.
-        raw_sq = meta.get("sub_queries", "")
-        sub_queries_cached: list[str] = (
-            raw_sq.split(",") if isinstance(raw_sq, str) and raw_sq else []
-        )
-        return SearchResponse(
-            answer=cached_answer,
-            citations=[],
-            sub_queries_used=sub_queries_cached,
-            cached=True,
-        )
+    cached = await query_cache.get(cache_key)
+    if cached is not None:
+        logger.info("Query Cache HIT for query: %s", query)
+        return SearchResponse(**cached)
+    logger.info("Query Cache MISS for query: %s", query)
+
 
     # 2. Decompose query into sub-queries
     sub_queries = await _decompose_query(query)
@@ -276,23 +243,19 @@ async def search(query: str, max_sources: int = 5) -> SearchResponse:
             + "\n".join(f"[{c.id}] {c.title} — {c.url}" for c in citations)
         )
 
-    # 6. Cache the final answer (query hash → answer + sub-queries used)
+    # 6. Cache the final answer in Redis (query hash → answer + sub-queries used)
     # Skip caching fallback answers — they're not useful as cached results.
-    # Wrap in try/except: if Ollama isn't reachable for embedding, skip
-    # caching rather than crashing the whole request.
     if synthesized:
         try:
-            store.upsert(
-                SEARCH_CACHE_COLLECTION,
-                [answer],
-                ids=[cache_key],
-                metadatas=[{
-                    "sub_queries": ",".join(sub_queries),
-                    "answer_at": datetime.now(timezone.utc).isoformat(),
-                }],
-            )
+            cache_data = {
+                "answer": answer,
+                "citations": [c.model_dump() for c in citations],
+                "sub_queries_used": sub_queries,
+                "cached": True,
+            }
+            await query_cache.set(cache_key, cache_data)
         except Exception as exc:
-            logger.warning("Cache write failed (embedding unavailable): %s", exc)
+            logger.warning("Cache write failed: %s", exc)
 
     return SearchResponse(
         answer=answer,
