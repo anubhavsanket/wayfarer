@@ -134,10 +134,15 @@ class RedisCache:
         """Full Redis key including namespace prefix."""
         return f"wayfarer:{self.namespace}:{key}"
 
-    # -- async API -----------------------------------------------------------
-
     async def get(self, key: str) -> Any | None:
-        """Return the cached value or ``None`` on miss / error."""
+        """Fetch value. Returns cached value or ``None`` on miss/Redis error.
+
+        Args:
+            key: Deterministic hash key.
+
+        Returns:
+            Deserialized JSON value, or None if not found/error.
+        """
         client = _get_redis()
         if client is None:
             return None
@@ -151,7 +156,12 @@ class RedisCache:
             return None
 
     async def set(self, key: str, value: Any) -> bool:
-        """Store a value. Returns True on success, False on error."""
+        """Store value. Returns ``True`` on success, ``False`` on error.
+
+        Args:
+            key: Deterministic hash key.
+            value: JSON-serializable value.
+        """
         client = _get_redis()
         if client is None:
             return False
@@ -163,7 +173,7 @@ class RedisCache:
             return False
 
     async def delete(self, key: str) -> bool:
-        """Remove a key. Returns True if the key existed."""
+        """Remove key. Returns ``True`` if key existed."""
         client = _get_redis()
         if client is None:
             return False
@@ -174,6 +184,7 @@ class RedisCache:
             return False
 
     async def exists(self, key: str) -> bool:
+        """Check key existence."""
         client = _get_redis()
         if client is None:
             return False
@@ -183,7 +194,7 @@ class RedisCache:
             return False
 
     async def clear(self) -> int:
-        """Delete all keys in this namespace. Returns count deleted."""
+        """Clear all keys in namespace. Returns number of keys deleted."""
         client = _get_redis()
         if client is None:
             return 0

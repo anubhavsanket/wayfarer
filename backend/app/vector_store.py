@@ -19,6 +19,7 @@ from typing import Any, Iterable
 
 import httpx
 from qdrant_client import QdrantClient, models
+from qdrant_client.http.exceptions import UnexpectedResponse, ResponseHandlingException
 
 from .config import settings
 
@@ -73,6 +74,7 @@ class VectorStore:
         self._ensure_client()
 
     def _ensure_client(self) -> None:
+        """Initialize Qdrant client, falling back to in-memory on connection errors."""
         if self._client is not None:
             return
         try:
@@ -83,10 +85,23 @@ class VectorStore:
             )
             self._client.get_collections()
             logger.info("Connected to Qdrant at %s:%s", settings.QDRANT_HOST, settings.QDRANT_PORT)
-        except Exception as exc:
+        except (httpx.ConnectError, httpx.TimeoutException) as exc:
             logger.warning(
-                "Qdrant at %s:%s unreachable (%s); using in-memory fallback",
+                "Qdrant at %s:%s unreachable (%s); falling back to in-memory store",
                 settings.QDRANT_HOST, settings.QDRANT_PORT, exc,
+            )
+            self._client = QdrantClient(":memory:")
+        except (ResponseHandlingException, UnexpectedResponse) as exc:
+            logger.warning(
+                "Qdrant at %s:%s returned an error (%s); falling back to in-memory store",
+                settings.QDRANT_HOST, settings.QDRANT_PORT, exc,
+            )
+            self._client = QdrantClient(":memory:")
+        except Exception as exc:
+            logger.error(
+                "Unexpected error connecting to Qdrant at %s:%s: %s",
+                settings.QDRANT_HOST, settings.QDRANT_PORT, exc,
+                exc_info=True
             )
             self._client = QdrantClient(":memory:")
 

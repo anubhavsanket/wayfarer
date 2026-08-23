@@ -83,7 +83,6 @@ class Settings(BaseSettings):
     JOB_POSTINGS_COLLECTION: str = "job_postings"
 
     # ── Cache (Redis-backed) ───────────────────────────────────────────
-    CONTENT_HASH_CACHE_DIR: str = "./cache/content_hashes"  # legacy, unused
     MAX_CACHE_ENTRIES: int = 10000
     CACHE_TTL_HOURS: int = 48
     CACHE_TTL_LLM_SECONDS: int = 86400       # 24 h — LLM responses

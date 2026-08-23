@@ -278,13 +278,19 @@ def _apply_location_preference(
     matches: list[JobMatch],
     pref: LocationPreference,
 ) -> list[JobMatch]:
-    """Filter + label postings per the user's location preference.
+    """Filter and label postings based on user location preferences.
 
-    - specific_city: require a city match (optionally include remote if remote_ok)
-    - remote_only:   only postings whose remote_type is remote
-    - hybrid:        only postings whose remote_type is hybrid or remote
-    - open_to_relocation: accept city matches in pref.cities, label as
-      RELOCATION_REQUIRED if not exact
+    Applies the selected LocationMode (REMOTE_ONLY, HYBRID, SPECIFIC_CITY, OPEN_TO_RELOCATION)
+    to sort and label job matches. Matches that don't meet the criteria
+    are removed from the final list, and surviving matches receive a LocationMatch label
+    (EXACT, REMOTE, RELOCATION_REQUIRED).
+
+    Args:
+        matches: A list of matched JobMatch objects to filter.
+        pref: The user's LocationPreference configuration.
+
+    Returns:
+        A filtered and re-ranked list of JobMatch objects.
     """
     mode = pref.mode
     cities = [c.lower().strip() for c in pref.cities if c]
@@ -355,7 +361,15 @@ def _apply_location_preference(
 # ---------------------------------------------------------------------------
 
 def _aggregate_gaps(matches: list[JobMatch]) -> list[AggregateGap]:
-    """Across matched postings, surface the most frequently missing skills."""
+    """Aggregate missing skills across matched job postings.
+
+    Args:
+        matches: List of job matches to analyze for missing skills (gaps).
+
+    Returns:
+        List of AggregateGap objects representing the top 10 most frequently
+        missing skills, with their frequency as a percentage.
+    """
     from collections import Counter
     counts: Counter[str] = Counter()
     total = len(matches)
@@ -380,11 +394,23 @@ async def match_jobs(
     limit: int = 20,
     fresher_only: bool = False,
 ) -> JobMatchResponse:
-    """Rank live postings by fit against a resume, with location filtering.
+    """Orchestrate the Stage 3 job matching pipeline.
 
-    When ``fresher_only=True`` (§15.1), only postings classified as "fresher"
-    or "junior" are surfaced in ``matches``. Postings classified as "unclear"
-    go into ``unclear_matches`` so they aren't silently dropped.
+    Fetches live job postings, ranks them based on semantic similarity and
+    keyword coverage, applies location filtering, and classifies experience levels.
+
+    Args:
+        resume_id: The ID of the parsed resume to match against.
+        location_preference: User's location mode and preferred cities.
+        limit: Max number of matches to return (clamped to 100).
+        fresher_only: If True, filters matches to include only 'fresher'/'junior'
+                      roles, with 'unclear' roles separated into `unclear_matches`.
+
+    Returns:
+        JobMatchResponse containing sorted matches, unclear matches, and aggregated skill gaps.
+
+    Raises:
+        ValueError: If `resume_id` is invalid or resume has no bullets.
     """
     pref = location_preference or LocationPreference()
     limit = min(limit, 100)
