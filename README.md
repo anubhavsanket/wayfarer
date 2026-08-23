@@ -1,5 +1,7 @@
 # Wayfarer — AI-Powered Job Search Automation Platform
 
+![Wayfarer Social Preview](social-preview.png)
+
 > A locally-hosted, RAG-driven job search platform built in three connected stages:
 > a **web search agent**, a **RAG-based ATS resume checker with redlining**, and a
 > **live job-posting matcher**. The retrieval, scoring, and matching logic is owned
@@ -11,6 +13,14 @@ free-tier APIs as fallback when local inference would blow the 4 GB VRAM budget.
 **Version: 1.1** — Fresher Mode, employment-type classification, LinkedIn
 integration, background pipeline maintenance, Tesseract OCR for embedded images,
 and neo-brutalist dark/light theme UI.
+
+[![GitHub stars](https://img.shields.io/github/stars/anubhavsanket/wayfarer?style=social)](https://github.com/anubhavsanket/wayfarer)
+[![GitHub license](https://img.shields.io/badge/license-Proprietary-blue.svg)](LICENSE)
+[![Docker](https://img.shields.io/badge/Docker-Ready-blue?logo=docker)](docker-compose.yml)
+[![Python](https://img.shields.io/badge/Python-3.11%20%7C%203.12-blue?logo=python)](backend/requirements.txt)
+[![React](https://img.shields.io/badge/React-18-blue?logo=react)](frontend/package.json)
+[![TypeScript](https://img.shields.io/badge/TypeScript-5-blue?logo=typescript)](frontend/tsconfig.json)
+[![Tests](https://img.shields.io/badge/Tests-91%20passing-brightgreen)](backend/tests/)
 
 ---
 
