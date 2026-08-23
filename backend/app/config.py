@@ -126,7 +126,7 @@ class Settings(BaseSettings):
         return self.PROVIDER_RATE_LIMITS.get(provider, {"requests": 60, "window": 60})
 
     def get_collection_url(self, collection: str) -> str:
-        return f"http://{self.CHROMA_HOST}:{self.CHROMA_PORT}"
+        return f"http://{self.QDRANT_HOST}:{self.QDRANT_PORT}"
 
     def get_embedding_url(self) -> str:
         return f"{self.OLLAMA_ENDPOINT}/api/embeddings"

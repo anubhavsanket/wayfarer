@@ -197,3 +197,18 @@ class DependencyStatus(BaseModel):
 class HealthResponse(BaseModel):
     status: Literal["ok", "degraded"]
     dependencies: list[DependencyStatus]
+
+
+# ---------- Background Refresh ----------
+
+class BackgroundRefreshResponse(BaseModel):
+    status: str
+    message: str
+    job_id: str
+
+
+class RefreshStatusResponse(BaseModel):
+    job_id: str
+    status: str
+    result: dict | None = None
+    error: str | None = None

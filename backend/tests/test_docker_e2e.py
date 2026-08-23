@@ -175,6 +175,5 @@ class TestBackgroundRefresh:
         resp = api("post", "/api/v1/jobs/refresh")
         assert resp.status_code == 200
         data = resp.json()
-        assert "refreshed" in data
-        assert data["refreshed"] > 0
-        assert "by_source" in data
+        assert data["status"] == "accepted"
+        assert "job_id" in data
