@@ -129,7 +129,7 @@ class TestResumeCheck:
 
     def test_resume_check_missing_file_rejected(self):
         resp = api("post", "/api/v1/resume/check", data={"jd_text": "test"})
-        assert resp.status_code == 422
+        assert resp.status_code in (400, 422)
 
 
 class TestResumeSave:

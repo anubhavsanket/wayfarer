@@ -465,15 +465,8 @@ class LLMRouter:
         raise ValueError(f"No endpoint for provider: {provider}")
 
     def _default_model(self, provider: str) -> str:
-        if provider == "nvidia":
-            return settings.NVIDIA_MODELS.get("simple", "meta/llama-3.1-8b-instruct")
-        if provider == "openrouter":
-            return settings.OPENROUTER_MODELS.get("simple", "meta-llama/llama-3.1-8b-instruct:free")
-        if provider == "lmstudio":
-            return settings.LMSTUDIO_MODEL
-        if provider == "custom":
-            return settings.CUSTOM_LLM_MODEL
-        return "unknown"
+        tier_models = settings.LLM_MODELS.get("simple", {})
+        return tier_models.get(provider, "unknown")
 
 
 # ---------------------------------------------------------------------------

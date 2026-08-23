@@ -108,6 +108,14 @@ class VectorStore:
     def _content_hash(text: str, extra: str = "") -> str:
         return hashlib.sha256(f"{text}\0{extra}".encode("utf-8")).hexdigest()
 
+    @staticmethod
+    def _to_uuid(id_str: str) -> str:
+        """Convert any string ID to a deterministic UUID5 for Qdrant compatibility."""
+        import uuid
+        # Use a fixed namespace for Wayfarer point IDs
+        NAMESPACE_WAYFARER = uuid.UUID("12345678-1234-5678-1234-567812345678")
+        return str(uuid.uuid5(NAMESPACE_WAYFARER, id_str))
+
     # -- add / get / query --------------------------------------------------
 
     def upsert(
@@ -120,49 +128,65 @@ class VectorStore:
         """Add or update documents in a collection. Returns the ids used."""
         docs = list(documents)
         self._ensure_collection(collection)
-        doc_ids = (
+        
+        raw_ids = (
             list(ids) if ids is not None
             else [self._content_hash(d) for d in docs]
         )
+        # Qdrant requires UUID or integer IDs
+        doc_ids = [self._to_uuid(rid) for rid in raw_ids]
+        
         meta_list = list(metadatas) if metadatas is not None else [{} for _ in docs]
 
         # Embed documents
         vectors = self._embedding_fn(docs)
 
         points = []
-        for doc_id, vec, payload in zip(doc_ids, vectors, meta_list):
+        for rid, doc_id, vec, payload in zip(raw_ids, doc_ids, vectors, meta_list):
             points.append(models.PointStruct(
                 id=doc_id,
                 vector=vec,
-                payload={"text": docs[0], **(payload or {})},  # Store original text
+                payload={
+                    "text": docs[0], 
+                    "_original_id": rid,  # Keep the original string ID for reconstruction
+                    **(payload or {})
+                },
             ))
 
         if points:
             self._client.upsert(collection_name=collection, points=points)
-        return doc_ids
+        return raw_ids
 
     def get(self, collection: str, ids: Iterable[str]) -> dict[str, Any]:
         """Fetch documents by id. Returns ChromaDB-compatible format."""
         self._ensure_collection(collection)
-        id_list = list(ids)
+        original_ids = list(ids)
+        qdrant_ids = [self._to_uuid(i) for i in original_ids]
+        
         try:
             results = self._client.retrieve(
                 collection_name=collection,
-                ids=id_list,
+                ids=qdrant_ids,
             )
-            # Convert to ChromaDB-like format for backward compatibility
-            found_ids = [r.id for r in results]
-            documents = [r.payload.get("text", "") if r.payload else "" for r in results]
-            metadatas = [{k: v for k, v in r.payload.items() if k != "text"} if r.payload else {} for r in results]
             
             # Reconstruct in the original order requested
             id_map = {r.id: r for r in results}
-            ordered_docs = [id_map[i].payload.get("text", "") if i in id_map and id_map[i].payload else "" for i in id_list]
-            ordered_meta = [{k: v for k, v in (id_map[i].payload or {}).items() if k != "text"} if i in id_map else {} for i in id_list]
+            ordered_docs = []
+            ordered_meta = []
             
-            return {"ids": id_list, "documents": ordered_docs, "metadatas": ordered_meta}
+            for qid in qdrant_ids:
+                if qid in id_map and id_map[qid].payload:
+                    ordered_docs.append(id_map[qid].payload.get("text", ""))
+                    # Strip internal fields
+                    meta = {k: v for k, v in id_map[qid].payload.items() if k not in ("text", "_original_id")}
+                    ordered_meta.append(meta)
+                else:
+                    ordered_docs.append(None)
+                    ordered_meta.append(None)
+            
+            return {"ids": original_ids, "documents": ordered_docs, "metadatas": ordered_meta}
         except Exception:
-            return {"ids": id_list, "documents": [None] * len(id_list), "metadatas": [None] * len(id_list)}
+            return {"ids": original_ids, "documents": [None] * len(original_ids), "metadatas": [None] * len(original_ids)}
 
     def query(
         self,
@@ -183,9 +207,9 @@ class VectorStore:
         )
         
         return {
-            "ids": [[r.id for r in results.points]],
+            "ids": [[r.payload.get("_original_id", str(r.id)) for r in results.points]],
             "documents": [[r.payload.get("text", "") if r.payload else "" for r in results.points]],
-            "metadatas": [[{k: v for k, v in (r.payload or {}).items() if k != "text"} for r in results.points]],
+            "metadatas": [[{k: v for k, v in (r.payload or {}).items() if k not in ("text", "_original_id")} for r in results.points]],
             "distances": [[r.score for r in results.points]],
         }
 

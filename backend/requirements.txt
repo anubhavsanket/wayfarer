@@ -16,10 +16,12 @@ qdrant-client==1.12.1
 
 # Resume parsing (Stage 2)
 unstructured==0.16.12
+python-docx==1.1.2
 pytesseract==0.3.13
 
 # Web scraping
 crawl4ai==0.6.2
+litellm==1.65.0
 
 # Queue / background jobs
 redis[hiredis]==5.2.1
