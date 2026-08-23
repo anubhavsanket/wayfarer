@@ -1,5 +1,7 @@
 import { animate, stagger, createTimeline } from "animejs";
 
+type AnimationTarget = string | HTMLElement[] | HTMLElement | NodeList;
+
 function prefersReducedMotion() {
   return window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 }
@@ -12,7 +14,7 @@ function markVisible(targets: string | HTMLElement[] | HTMLElement | NodeList) {
 
 /** Fade in + slide up. Falls back to visible with no animation. */
 export function revealUp(
-  targets: string | HTMLElement[] | HTMLElement | NodeList,
+  targets: AnimationTarget,
   opts?: {
     y?: number;
     delay?: number;
@@ -24,7 +26,7 @@ export function revealUp(
     markVisible(targets);
     return undefined;
   }
-  return animate(targets as any, {
+  return animate(targets as HTMLElement | HTMLElement[], {
     opacity: [0, 1],
     translateY: [opts?.y ?? 20, 0],
     duration: opts?.duration ?? 550,
@@ -35,14 +37,14 @@ export function revealUp(
 
 /** Quick pop-in with overshoot. */
 export function popIn(
-  targets: string | HTMLElement[] | HTMLElement | NodeList,
+  targets: AnimationTarget,
   delay?: number,
 ) {
   if (prefersReducedMotion()) {
     markVisible(targets);
     return undefined;
   }
-  return animate(targets as any, {
+  return animate(targets as HTMLElement | HTMLElement[], {
     scale: [0.88, 1],
     opacity: [0, 1],
     duration: 420,

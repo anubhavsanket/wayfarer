@@ -6,6 +6,7 @@ import {
 } from "lucide-react";
 
 import { api } from "@/lib/api";
+import { AggregateGap, JobMatch } from "@/lib/types";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Sticker } from "@/components/ui/badge";
@@ -38,7 +39,7 @@ function sourceVariant(source: string) {
 
 /* ── Job Card ───────────────────────────────────────────────────────── */
 
-function JobCard({ job }: { job: any }) {
+function JobCard({ job }: { job: JobMatch }) {
   return (
     <Card className="p-5">
       <div className="flex items-start justify-between gap-4">
@@ -418,7 +419,7 @@ export default function JobMatchPage() {
                 {fresherOnly ? " (fresher/junior only)" : ""}
                 {minScore > 0 ? ` (≥${minScore}% match)` : ""}
               </p>
-              {data.matches.map((job: any) => (
+              {data.matches.map((job: JobMatch) => (
                 <JobCard key={job.job_id} job={job} />
               ))}
             </Stagger>
@@ -439,11 +440,12 @@ export default function JobMatchPage() {
               </button>
               {showUnclear && (
                 <Stagger className="mt-3 space-y-3">
-                  {data.unclear_matches.map((job: any) => (
+                  {data.unclear_matches.map((job: JobMatch) => (
                     <JobCard key={job.job_id} job={job} />
                   ))}
                 </Stagger>
               )}
+
             </div>
           )}
 
@@ -454,7 +456,7 @@ export default function JobMatchPage() {
                 <AlertTriangle className="h-3 w-3" /> Top Missing Skills
               </Sticker>
               <ul className="space-y-2">
-                {data.aggregate_gaps.map((g: any, i: number) => (
+                {data.aggregate_gaps.map((g: AggregateGap, i: number) => (
                   <li key={i} className="flex items-center gap-3">
                     <span className="flex-1 text-sm font-medium">{g.skill}</span>
                     <ScoreBar

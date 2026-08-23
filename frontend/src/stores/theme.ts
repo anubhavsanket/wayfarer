@@ -12,7 +12,10 @@ function readPersisted(): Theme {
   try {
     const v = localStorage.getItem(STORAGE_KEY);
     if (v === "light" || v === "dark") return v;
-  } catch {}
+    } catch (error) {
+      console.error("Failed to save theme", error);
+    }
+
   return getSystemPreference();
 }
 
@@ -27,7 +30,10 @@ export function useTheme() {
     applyClass(theme);
     try {
       localStorage.setItem(STORAGE_KEY, theme);
-    } catch {}
+  } catch (error) {
+    console.error("Failed to read theme", error);
+  }
+
   }, [theme]);
 
   const toggle = useCallback(() => {
