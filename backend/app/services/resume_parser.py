@@ -1,12 +1,12 @@
 """Resume parser: PDF/DOCX → structured sections + ATS-visible text.
 
-Uses Unstructured.io for document parsing with two strategies:
-- ``hi_res`` — layout-aware extraction for human-readable sections + bullets
-- ``fast``   — naive text extraction simulating a basic ATS parser
+Uses high-speed Markdown parsing first (PyMuPDF4LLM for PDF, MarkItDown for DOCX):
+- Converts documents to structured Markdown in <300ms
+- Preserves layout, section headers, bullet lists, and table indicators
+- Generates layout-blind plain text simulating legacy ATS parsers
 
-Falls back to python-docx + pdfplumber when Unstructured fails (e.g. due to
-dependency conflicts on Windows development machines). In Docker, Unstructured
-is the primary parser and handles OCR, table detection, and layout analysis.
+Falls back to Unstructured.io or pdfplumber + python-docx when Markdown parsers
+are unavailable.
 
 FR2.1 (PRD §8.1): Parse an uploaded resume into structured sections
 (contact, skills, experience bullets, education).
@@ -113,8 +113,122 @@ def _parse_sections(lines: list[str]) -> tuple[dict[str, list[str]], list[Resume
     return sections, bullets
 
 
+
 # ---------------------------------------------------------------------------
-# Unstructured.io parsing (primary path in Docker)
+# High-Speed Markdown Parsing (PyMuPDF4LLM for PDF, MarkItDown for DOCX)
+# ---------------------------------------------------------------------------
+
+def _clean_md_header(line: str) -> str:
+    """Strip markdown headers (#, ##), bold (**), and underline formatting."""
+    s = re.sub(r"^#+\s*", "", line).strip()
+    s = re.sub(r"^\*\*(.*?)\*\*$", r"\1", s).strip()
+    s = re.sub(r"^__(.*?)__$", r"\1", s).strip()
+    return s.rstrip(":")
+
+
+def _try_markdown_parser(file_path: str) -> ParsedResume | None:
+    """Attempt high-speed Markdown parsing. Returns None on failure."""
+    path = Path(file_path)
+    suffix = path.suffix.lower()
+    md_text: str | None = None
+
+    if suffix == ".pdf":
+        try:
+            import pymupdf4llm
+            md_text = pymupdf4llm.to_markdown(file_path)
+        except Exception as exc:
+            logger.debug("PyMuPDF4LLM conversion failed: %s", exc)
+            return None
+    elif suffix in (".docx", ".doc"):
+        try:
+            from markitdown import MarkItDown
+            converter = MarkItDown()
+            res = converter.convert(file_path)
+            md_text = res.text_content
+        except Exception as exc:
+            logger.debug("MarkItDown conversion failed: %s", exc)
+            return None
+    else:
+        return None
+
+    if not md_text or not md_text.strip():
+        return None
+
+    sections: dict[str, list[str]] = {}
+    current_section = "preamble"
+    bullets: list[ResumeBullet] = []
+    bullet_id = 0
+    all_text_lines: list[str] = []
+    structural_issues: list[StructuralIssue] = []
+
+    lines = md_text.splitlines()
+
+    # Detect tables in Markdown
+    table_lines = [l for l in lines if "|" in l and ("---" in l or l.strip().startswith("|"))]
+    if table_lines:
+        structural_issues.append(StructuralIssue(
+            location="Global",
+            issue="Document contains table structures. A naive ATS may lose formatting or merge cell contents.",
+        ))
+
+    for line in lines:
+        stripped = line.strip()
+        if not stripped:
+            continue
+
+        # Skip markdown table divider lines
+        if re.match(r"^\|?[\s\-:]+(\|[\s\-:]+)+\|?$", stripped):
+            continue
+
+        clean_header = _clean_md_header(stripped)
+        detected = _detect_section(clean_header) or (
+            _detect_section(stripped) if stripped != clean_header else None
+        )
+
+        if detected:
+            current_section = detected
+            sections.setdefault(current_section, [])
+            continue
+
+        # Clean text line (strip markdown formatting for content lines)
+        clean_line = re.sub(r"^\s*\|?\s*", "", stripped)
+        clean_line = re.sub(r"\s*\|\s*$", "", clean_line)
+        clean_line = clean_line.replace("|", " ").strip()
+
+        sections.setdefault(current_section, []).append(clean_line)
+        all_text_lines.append(clean_line)
+
+        # Extract bullets
+        clean_bullet = BULLET_PATTERN.sub("", clean_line).strip()
+        clean_bullet = re.sub(r"^\*\*(.*?)\*\*", r"\1", clean_bullet).strip()
+        is_bullet = bool(BULLET_PATTERN.match(stripped)) or (
+            current_section in BULLET_SECTIONS and clean_bullet
+        )
+        if is_bullet and clean_bullet:
+            bullets.append(ResumeBullet(id=f"b{bullet_id}", section=current_section, text=clean_bullet))
+            bullet_id += 1
+
+    contact = _extract_contact(all_text_lines)
+
+    # ATS simulation text (strip markdown symbols for layout-blind ATS view)
+    ats_visible_text = re.sub(r"[#\*_`~\[\]]", "", md_text)
+    ats_visible_text = re.sub(r"\|", " ", ats_visible_text)
+    ats_visible_text = "\n".join(l.strip() for l in ats_visible_text.splitlines() if l.strip())
+
+    raw_text = "\n".join(all_text_lines)
+
+    return ParsedResume(
+        sections=sections,
+        bullets=bullets,
+        ats_visible_text=ats_visible_text,
+        raw_text=raw_text,
+        structural_issues=structural_issues,
+        contact=contact,
+    )
+
+
+# ---------------------------------------------------------------------------
+# Unstructured.io parsing (fallback path)
 # ---------------------------------------------------------------------------
 
 def _try_unstructured(file_path: str) -> ParsedResume | None:
@@ -319,8 +433,8 @@ class ParsedResume:
 def parse_resume(file_path: str, filename: str = "") -> ParsedResume:
     """Parse a resume file (PDF/DOCX) and return structured data + ATS text.
 
-    Tries Unstructured.io first (better layout analysis, OCR, table detection).
-    Falls back to pdfplumber/python-docx when Unstructured is unavailable.
+    Tries high-speed Markdown parsing first (PyMuPDF4LLM for PDF, MarkItDown for DOCX).
+    Falls back to Unstructured.io, and finally pdfplumber/python-docx.
     """
     path = Path(file_path)
     suffix = path.suffix.lower()
@@ -328,7 +442,13 @@ def parse_resume(file_path: str, filename: str = "") -> ParsedResume:
     if suffix not in (".pdf", ".docx"):
         raise ValueError(f"Unsupported resume format: {suffix}. Only PDF and DOCX are supported.")
 
-    # Try Unstructured.io first
+    # Try high-speed Markdown parser first
+    result = _try_markdown_parser(str(path))
+    if result is not None:
+        logger.info("Parsed with Markdown parser: %s", file_path)
+        return result
+
+    # Try Unstructured.io next
     result = _try_unstructured(str(path))
     if result is not None:
         logger.info("Parsed with Unstructured.io: %s", file_path)

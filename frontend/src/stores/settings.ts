@@ -69,10 +69,14 @@ export function useSettings() {
   return { settings, update, reset };
 }
 
-/** Build headers to send API keys to the backend (reads from localStorage). */
+/** Build headers to send API keys and Bearer auth token to the backend (reads from localStorage). */
 export function buildAuthHeaders(): Record<string, string> {
   const s = load();
   const headers: Record<string, string> = {};
+  const token = localStorage.getItem("wayfarer_access_token");
+  if (token) {
+    headers["Authorization"] = `Bearer ${token}`;
+  }
   if (s.llm_provider) headers["X-LLM-Provider"] = s.llm_provider;
   if (s.nvidia_api_key) headers["X-NVIDIA-API-Key"] = s.nvidia_api_key;
   if (s.nvidia_endpoint) headers["X-NVIDIA-Endpoint"] = s.nvidia_endpoint;

@@ -9,7 +9,7 @@ router = APIRouter(prefix="/api/v1/resume", tags=["stage2"])
 async def resume_check(
     resume_id: str = Form(None),
     resume_file: UploadFile = File(None),
-    jd_text: str = Form(...),
+    jd_text: str = Form(None),
 ) -> ResumeCheckResponse:
     from ..services import resume_store
     from ..services.ats_checker import check_resume
@@ -43,6 +43,16 @@ async def resume_check(
             raise ResumeNotFoundError(resume_id)
     else:
         raise ResumeValidationError("Either resume_file or resume_id must be provided.")
+
+    # Upload-only flow (e.g. Settings primary resume upload with no real JD)
+    if not jd_text or jd_text.strip().lower() in ("", "placeholder"):
+        parsed = resume_store.load_parsed(resume_id)
+        return ResumeCheckResponse(
+            resume_id=resume_id,
+            ats_score=1.0,
+            structural_issues=parsed.structural_issues if parsed else [],
+            keyword_gaps=[],
+        )
 
     return await check_resume(str(saved_path), jd_text, resume_id=resume_id)
 

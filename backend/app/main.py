@@ -24,7 +24,7 @@ from . import db
 from .config import settings
 from .context import RequestOverrides, request_overrides_var
 from .exceptions import WayfarerError
-from .routers import health, stage1, stage2, stage3, tracker
+from .routers import auth, health, stage1, stage2, stage3, tracker
 from .services import jobs_queue
 from .utils.cache import set_redis as cache_set_redis
 
@@ -138,6 +138,7 @@ async def value_error_handler(request: Request, exc: ValueError):
 
 # Include routers
 app.include_router(health.router)
+app.include_router(auth.router)
 app.include_router(stage1.router)
 app.include_router(stage2.router)
 app.include_router(stage3.router)
@@ -176,23 +177,34 @@ async def request_logging_middleware(request: Request, call_next):
 
 @app.middleware("http")
 async def extract_header_overrides_middleware(request: Request, call_next):
-    """Extract X-* request headers from frontend and populate request_overrides_var."""
+    """Extract X-* request headers and per-user decrypted settings to populate request_overrides_var."""
     headers = request.headers
+    user_settings: dict[str, Any] = {}
+
+    auth_header = headers.get("authorization") or ""
+    if auth_header.startswith("Bearer "):
+        token = auth_header[7:].strip()
+        from .core.auth import decode_access_token
+        from .db import get_user_settings
+        payload = decode_access_token(token)
+        if payload and "sub" in payload:
+            user_settings = get_user_settings(payload["sub"])
+
     overrides = RequestOverrides(
-        llm_provider=headers.get("x-llm-provider") or None,
-        nvidia_api_key=headers.get("x-nvidia-api-key") or None,
-        nvidia_endpoint=headers.get("x-nvidia-endpoint") or None,
-        openrouter_api_key=headers.get("x-openrouter-api-key") or None,
-        openrouter_endpoint=headers.get("x-openrouter-endpoint") or None,
-        ollama_endpoint=headers.get("x-ollama-endpoint") or None,
-        lmstudio_endpoint=headers.get("x-lmstudio-endpoint") or None,
-        lmstudio_model=headers.get("x-lmstudio-model") or None,
-        custom_endpoint=headers.get("x-custom-endpoint") or None,
-        custom_api_key=headers.get("x-custom-api-key") or None,
-        custom_model=headers.get("x-custom-model") or None,
-        tavily_api_key=headers.get("x-tavily-api-key") or None,
-        brave_api_key=headers.get("x-brave-api-key") or None,
-        bluedoor_api_key=headers.get("x-bluedoor-api-key") or None,
+        llm_provider=headers.get("x-llm-provider") or user_settings.get("llm_provider") or None,
+        nvidia_api_key=headers.get("x-nvidia-api-key") or user_settings.get("nvidia_api_key") or None,
+        nvidia_endpoint=headers.get("x-nvidia-endpoint") or user_settings.get("nvidia_endpoint") or None,
+        openrouter_api_key=headers.get("x-openrouter-api-key") or user_settings.get("openrouter_api_key") or None,
+        openrouter_endpoint=headers.get("x-openrouter-endpoint") or user_settings.get("openrouter_endpoint") or None,
+        ollama_endpoint=headers.get("x-ollama-endpoint") or user_settings.get("ollama_endpoint") or None,
+        lmstudio_endpoint=headers.get("x-lmstudio-endpoint") or user_settings.get("lmstudio_endpoint") or None,
+        lmstudio_model=headers.get("x-lmstudio-model") or user_settings.get("lmstudio_model") or None,
+        custom_endpoint=headers.get("x-custom-endpoint") or user_settings.get("custom_endpoint") or None,
+        custom_api_key=headers.get("x-custom-api-key") or user_settings.get("custom_api_key") or None,
+        custom_model=headers.get("x-custom-model") or user_settings.get("custom_model") or None,
+        tavily_api_key=headers.get("x-tavily-api-key") or user_settings.get("tavily_api_key") or None,
+        brave_api_key=headers.get("x-brave-api-key") or user_settings.get("brave_api_key") or None,
+        bluedoor_api_key=headers.get("x-bluedoor-api-key") or user_settings.get("bluedoor_api_key") or None,
     )
     token = request_overrides_var.set(overrides)
     try:

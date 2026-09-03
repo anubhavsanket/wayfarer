@@ -1,22 +1,21 @@
-"""SQLite-backed application tracker (saved jobs + applications).
+"""SQLite-backed multi-tenant storage (users, encrypted settings, tracker).
 
-Lightweight relational store for the job-search pipeline state that doesn't
-belong in a vector DB: which postings you saved, which you applied to, and the
-status of each application. Persisted at ``settings.TRACKER_DB_PATH`` and
-volume-mounted so state survives container recreation.
+Lightweight relational store for user identity, encrypted API keys, and pipeline state.
+Persisted at ``settings.TRACKER_DB_PATH`` and volume-mounted so state survives container recreation.
 
-Single-user design: one shared connection guarded by a threading lock. All DB
-calls go through ``asyncio.to_thread`` from routers so they never block the
-event loop.
+Guarded by a threading lock. All DB calls go through ``asyncio.to_thread`` from routers.
 """
 from __future__ import annotations
 
+import json
 import logging
 import sqlite3
 import threading
 from datetime import datetime, timezone
+from typing import Any
 
 from .config import settings
+from .utils.crypto import encrypt_text, decrypt_text
 
 logger = logging.getLogger(__name__)
 
@@ -32,7 +31,7 @@ def _now_iso() -> str:
 
 
 def init_db() -> None:
-    """Open the SQLite connection and create tables if needed. Call once at startup."""
+    """Open the SQLite connection and create tables/columns if needed. Call once at startup."""
     global _conn
     import os
     os.makedirs(os.path.dirname(settings.TRACKER_DB_PATH) or ".", exist_ok=True)
@@ -44,17 +43,43 @@ def init_db() -> None:
             check_same_thread=False,
         )
         _conn.row_factory = sqlite3.Row
+
+        # ── Tables ──────────────────────────────────────────────────────
+        _conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS users (
+                user_id TEXT PRIMARY KEY,
+                email TEXT UNIQUE NOT NULL,
+                name TEXT,
+                picture TEXT,
+                created_at TEXT NOT NULL,
+                last_login TEXT NOT NULL
+            )
+            """
+        )
+        _conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS user_settings (
+                user_id TEXT PRIMARY KEY,
+                encrypted_settings TEXT NOT NULL,
+                updated_at TEXT NOT NULL,
+                FOREIGN KEY (user_id) REFERENCES users(user_id) ON DELETE CASCADE
+            )
+            """
+        )
         _conn.execute(
             """
             CREATE TABLE IF NOT EXISTS saved_jobs (
-                job_id TEXT PRIMARY KEY,
+                job_id TEXT NOT NULL,
+                user_id TEXT NOT NULL DEFAULT 'local',
                 title TEXT NOT NULL,
                 company TEXT NOT NULL,
                 apply_url TEXT,
                 source TEXT,
                 location TEXT,
                 match_score REAL DEFAULT 0,
-                saved_at TEXT NOT NULL
+                saved_at TEXT NOT NULL,
+                PRIMARY KEY (job_id, user_id)
             )
             """
         )
@@ -62,7 +87,8 @@ def init_db() -> None:
             """
             CREATE TABLE IF NOT EXISTS applications (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
-                job_id TEXT UNIQUE,
+                job_id TEXT NOT NULL,
+                user_id TEXT NOT NULL DEFAULT 'local',
                 title TEXT NOT NULL,
                 company TEXT NOT NULL,
                 apply_url TEXT,
@@ -72,10 +98,29 @@ def init_db() -> None:
                 status TEXT NOT NULL DEFAULT 'applied',
                 date_applied TEXT NOT NULL,
                 notes TEXT DEFAULT '',
-                resume_id TEXT
+                resume_id TEXT,
+                UNIQUE (job_id, user_id)
             )
             """
         )
+
+        # ── Migrations (add user_id column if upgrading existing DB) ───
+        try:
+            cur = _conn.execute("PRAGMA table_info(saved_jobs)")
+            cols = [r["name"] for r in cur.fetchall()]
+            if "user_id" not in cols:
+                _conn.execute("ALTER TABLE saved_jobs ADD COLUMN user_id TEXT NOT NULL DEFAULT 'local'")
+        except Exception as exc:
+            logger.debug("Migration for saved_jobs failed or unneeded: %s", exc)
+
+        try:
+            cur = _conn.execute("PRAGMA table_info(applications)")
+            cols = [r["name"] for r in cur.fetchall()]
+            if "user_id" not in cols:
+                _conn.execute("ALTER TABLE applications ADD COLUMN user_id TEXT NOT NULL DEFAULT 'local'")
+        except Exception as exc:
+            logger.debug("Migration for applications failed or unneeded: %s", exc)
+
         _conn.commit()
         logger.info("Tracker DB initialised at %s", settings.TRACKER_DB_PATH)
 
@@ -96,100 +141,174 @@ def _get_conn() -> sqlite3.Connection:
 
 
 # ---------------------------------------------------------------------------
-# Saved jobs
+# User identity & settings management
 # ---------------------------------------------------------------------------
 
-def list_saved() -> list[dict]:
+def upsert_user(
+    user_id: str,
+    email: str,
+    name: str | None = None,
+    picture: str | None = None,
+) -> dict:
+    now = _now_iso()
+    with _lock:
+        conn = _get_conn()
+        existing = conn.execute("SELECT created_at FROM users WHERE user_id = ?", (user_id,)).fetchone()
+        created_at = existing["created_at"] if existing else now
+        conn.execute(
+            """
+            INSERT OR REPLACE INTO users (user_id, email, name, picture, created_at, last_login)
+            VALUES (?, ?, ?, ?, ?, ?)
+            """,
+            (user_id, email, name or "", picture or "", created_at, now),
+        )
+        conn.commit()
+    return get_user(user_id) or {}
+
+
+def get_user(user_id: str) -> dict | None:
+    with _lock:
+        row = _get_conn().execute("SELECT * FROM users WHERE user_id = ?", (user_id,)).fetchone()
+    return dict(row) if row else None
+
+
+def save_user_settings(user_id: str, settings_dict: dict[str, Any]) -> None:
+    """Encrypt and persist user-specific settings/keys."""
+    now = _now_iso()
+    raw_json = json.dumps(settings_dict)
+    encrypted = encrypt_text(raw_json)
+    with _lock:
+        conn = _get_conn()
+        conn.execute(
+            """
+            INSERT OR REPLACE INTO user_settings (user_id, encrypted_settings, updated_at)
+            VALUES (?, ?, ?)
+            """,
+            (user_id, encrypted, now),
+        )
+        conn.commit()
+
+
+def get_user_settings(user_id: str) -> dict[str, Any]:
+    """Retrieve and decrypt user-specific settings/keys."""
+    with _lock:
+        row = _get_conn().execute(
+            "SELECT encrypted_settings FROM user_settings WHERE user_id = ?", (user_id,)
+        ).fetchone()
+    if not row or not row["encrypted_settings"]:
+        return {}
+    decrypted = decrypt_text(row["encrypted_settings"])
+    if not decrypted:
+        return {}
+    try:
+        return json.loads(decrypted)
+    except Exception:
+        return {}
+
+
+# ---------------------------------------------------------------------------
+# Saved jobs (multi-tenant)
+# ---------------------------------------------------------------------------
+
+def list_saved(user_id: str = "local") -> list[dict]:
     with _lock:
         rows = _get_conn().execute(
-            "SELECT * FROM saved_jobs ORDER BY saved_at DESC"
+            "SELECT * FROM saved_jobs WHERE user_id = ? ORDER BY saved_at DESC", (user_id,)
         ).fetchall()
     return [dict(r) for r in rows]
 
 
-def get_saved(job_id: str) -> dict | None:
+def get_saved(job_id: str, user_id: str = "local") -> dict | None:
     with _lock:
         row = _get_conn().execute(
-            "SELECT * FROM saved_jobs WHERE job_id = ?", (job_id,)
+            "SELECT * FROM saved_jobs WHERE job_id = ? AND user_id = ?", (job_id, user_id)
         ).fetchone()
     return dict(row) if row else None
 
 
-def save_job(job: dict) -> dict:
+def save_job(job: dict, user_id: str = "local") -> dict:
     now = _now_iso()
     with _lock:
         conn = _get_conn()
         conn.execute(
             """
             INSERT OR REPLACE INTO saved_jobs
-                (job_id, title, company, apply_url, source, location, match_score, saved_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                (job_id, user_id, title, company, apply_url, source, location, match_score, saved_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
-                job["job_id"], job["title"], job["company"], job.get("apply_url"),
+                job["job_id"], user_id, job["title"], job["company"], job.get("apply_url"),
                 job.get("source"), job.get("location"), job.get("match_score", 0.0), now,
             ),
         )
         conn.commit()
     res = dict(job)
+    res["user_id"] = user_id
     res["saved_at"] = now
     return res
 
 
-def is_saved(job_id: str) -> bool:
-    return get_saved(job_id) is not None
+def is_saved(job_id: str, user_id: str = "local") -> bool:
+    return get_saved(job_id, user_id=user_id) is not None
 
 
-def unsave_job(job_id: str) -> bool:
+def unsave_job(job_id: str, user_id: str = "local") -> bool:
     with _lock:
-        cur = _get_conn().execute("DELETE FROM saved_jobs WHERE job_id = ?", (job_id,))
+        cur = _get_conn().execute(
+            "DELETE FROM saved_jobs WHERE job_id = ? AND user_id = ?", (job_id, user_id)
+        )
         _get_conn().commit()
         return cur.rowcount > 0
 
 
 # ---------------------------------------------------------------------------
-# Applications
+# Applications (multi-tenant)
 # ---------------------------------------------------------------------------
 
-def list_applications() -> list[dict]:
+def list_applications(user_id: str = "local") -> list[dict]:
     with _lock:
         rows = _get_conn().execute(
-            "SELECT * FROM applications ORDER BY date_applied DESC"
+            "SELECT * FROM applications WHERE user_id = ? ORDER BY date_applied DESC", (user_id,)
         ).fetchall()
     return [dict(r) for r in rows]
 
 
-def get_application(job_id: str) -> dict | None:
+def get_application(job_id: str, user_id: str = "local") -> dict | None:
     with _lock:
         row = _get_conn().execute(
-            "SELECT * FROM applications WHERE job_id = ?", (job_id,)
+            "SELECT * FROM applications WHERE job_id = ? AND user_id = ?", (job_id, user_id)
         ).fetchone()
     return dict(row) if row else None
 
 
-def create_application(job: dict) -> dict:
+def create_application(job: dict, user_id: str = "local") -> dict:
     now = _now_iso()
     with _lock:
         conn = _get_conn()
         conn.execute(
             """
             INSERT OR IGNORE INTO applications
-                (job_id, title, company, apply_url, source, location, match_score,
+                (job_id, user_id, title, company, apply_url, source, location, match_score,
                  status, date_applied, notes, resume_id)
-            VALUES (?, ?, ?, ?, ?, ?, ?, 'applied', ?, '', ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'applied', ?, '', ?)
             """,
             (
-                job["job_id"], job["title"], job["company"], job.get("apply_url"),
+                job["job_id"], user_id, job["title"], job["company"], job.get("apply_url"),
                 job.get("source"), job.get("location"), job.get("match_score", 0.0),
                 now, job.get("resume_id"),
             ),
         )
         conn.commit()
-    return get_application(job["job_id"]) or {}
+    return get_application(job["job_id"], user_id=user_id) or {}
 
 
-def update_application(job_id: str, status: str | None = None, notes: str | None = None) -> dict | None:
-    existing = get_application(job_id)
+def update_application(
+    job_id: str,
+    status: str | None = None,
+    notes: str | None = None,
+    user_id: str = "local",
+) -> dict | None:
+    existing = get_application(job_id, user_id=user_id)
     if existing is None:
         return None
     if status is not None:
@@ -203,15 +322,17 @@ def update_application(job_id: str, status: str | None = None, notes: str | None
     with _lock:
         conn = _get_conn()
         conn.execute(
-            "UPDATE applications SET status = ?, notes = ? WHERE job_id = ?",
-            (existing["status"], existing["notes"], job_id),
+            "UPDATE applications SET status = ?, notes = ? WHERE job_id = ? AND user_id = ?",
+            (existing["status"], existing["notes"], job_id, user_id),
         )
         conn.commit()
     return existing
 
 
-def delete_application(job_id: str) -> bool:
+def delete_application(job_id: str, user_id: str = "local") -> bool:
     with _lock:
-        cur = _get_conn().execute("DELETE FROM applications WHERE job_id = ?", (job_id,))
+        cur = _get_conn().execute(
+            "DELETE FROM applications WHERE job_id = ? AND user_id = ?", (job_id, user_id)
+        )
         _get_conn().commit()
         return cur.rowcount > 0

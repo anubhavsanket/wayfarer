@@ -1,6 +1,6 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useMutation } from "@tanstack/react-query";
-import { Settings as SettingsIcon, Eye, EyeOff, Save, RotateCcw, CheckCircle2, Upload } from "lucide-react";
+import { Settings as SettingsIcon, Eye, EyeOff, Save, RotateCcw, CheckCircle2, Upload, User, LogOut, ShieldCheck } from "lucide-react";
 import { useSettings } from "@/stores/settings";
 import { api } from "@/lib/api";
 import { Card } from "@/components/ui/card";
@@ -13,6 +13,131 @@ const PROVIDERS = [
   { value: "lmstudio", label: "LM Studio (local)" },
   { value: "custom", label: "Custom OpenAI-compatible" },
 ];
+
+/* ── User Auth & OAuth Card ─────────────────────────────────────────── */
+
+function UserAuthCard() {
+  const [emailInput, setEmailInput] = useState("");
+  const [nameInput, setNameInput] = useState("");
+  const [currentUser, setCurrentUser] = useState<{
+    user_id: string;
+    email: string;
+    name: string;
+  } | null>(null);
+
+  const fetchMe = async () => {
+    try {
+      const data = await api.getMe();
+      if (data && data.user_id !== "local") {
+        setCurrentUser(data);
+      } else {
+        setCurrentUser(null);
+      }
+    } catch {
+      setCurrentUser(null);
+    }
+  };
+
+  useEffect(() => {
+    fetchMe();
+  }, []);
+
+  const loginMutation = useMutation({
+    mutationFn: (payload: { email: string; name?: string }) => api.authLogin(payload),
+    onSuccess: (data) => {
+      localStorage.setItem("wayfarer_access_token", data.access_token);
+      setCurrentUser({
+        user_id: data.user_id,
+        email: data.email,
+        name: data.name,
+      });
+      setEmailInput("");
+      setNameInput("");
+    },
+  });
+
+  const handleLogout = () => {
+    localStorage.removeItem("wayfarer_access_token");
+    setCurrentUser(null);
+  };
+
+  return (
+    <Card className="p-6">
+      <div className="mb-4 flex items-center justify-between">
+        <div className="flex items-center gap-2">
+          <ShieldCheck className="h-5 w-5 text-blue" />
+          <h3 className="font-display font-bold">User Account & OAuth</h3>
+        </div>
+        {currentUser ? (
+          <Sticker variant="cyan">Authenticated ({currentUser.email})</Sticker>
+        ) : (
+          <Sticker variant="amber">Local Mode (Unauthenticated)</Sticker>
+        )}
+      </div>
+
+      {currentUser ? (
+        <div className="space-y-3">
+          <div className="flex items-center justify-between rounded-lg border border-border bg-beige-deep p-4">
+            <div className="flex items-center gap-3">
+              <div className="flex h-10 w-10 items-center justify-center rounded-full bg-blue text-white font-bold">
+                {currentUser.name ? currentUser.name[0].toUpperCase() : currentUser.email[0].toUpperCase()}
+              </div>
+              <div>
+                <p className="font-semibold text-sm">{currentUser.name || "User"}</p>
+                <p className="text-xs font-mono text-muted-foreground">{currentUser.email}</p>
+                <p className="text-[10px] font-mono text-muted-foreground/70">ID: {currentUser.user_id}</p>
+              </div>
+            </div>
+            <button
+              onClick={handleLogout}
+              className="inline-flex items-center gap-1.5 rounded-lg border border-destructive/30 px-3 py-1.5 text-xs font-medium text-destructive transition-colors hover:bg-destructive/10"
+            >
+              <LogOut className="h-3.5 w-3.5" />
+              Sign Out
+            </button>
+          </div>
+          <p className="text-xs text-muted-foreground">
+            Your saved job applications, bookmarked postings, and API keys are isolated and securely encrypted for your account.
+          </p>
+        </div>
+      ) : (
+        <div className="space-y-4">
+          <p className="text-sm text-muted-foreground">
+            Sign in to save your application tracker data, bookmarks, and API keys encrypted in your private account space.
+          </p>
+          <div className="grid gap-3 sm:grid-cols-2">
+            <Field
+              label="Email Address"
+              value={emailInput}
+              onChange={setEmailInput}
+              placeholder="user@example.com"
+              required
+            />
+            <Field
+              label="Display Name (optional)"
+              value={nameInput}
+              onChange={setNameInput}
+              placeholder="Alex Smith"
+            />
+          </div>
+          <div className="flex gap-2">
+            <button
+              disabled={!emailInput || loginMutation.isPending}
+              onClick={() => loginMutation.mutate({ email: emailInput, name: nameInput })}
+              className="inline-flex items-center gap-2 rounded-lg bg-blue px-4 py-2 text-sm font-semibold text-white shadow-sm transition-all duration-150 hover:bg-blue-deep disabled:opacity-50"
+            >
+              <User className="h-4 w-4" />
+              {loginMutation.isPending ? "Signing in..." : "Sign In / Register"}
+            </button>
+          </div>
+          {loginMutation.isError && (
+            <p className="text-sm text-destructive">Sign in failed: {loginMutation.error.message}</p>
+          )}
+        </div>
+      )}
+    </Card>
+  );
+}
 
 /* ── Primary Resume Upload Card ──────────────────────────────────────── */
 

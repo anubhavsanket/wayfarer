@@ -114,6 +114,13 @@ class Settings(BaseSettings):
     # ── Performance ─────────────────────────────────────────────────────
     MAX_VRAM_GB: int = 4
 
+    # ── Auth & Encryption ────────────────────────────────────────────────
+    ENCRYPTION_SECRET_KEY: str = "wayfarer-default-secret-key-32bytes!!"
+    JWT_SECRET_KEY: str = "wayfarer-jwt-secret-key-change-in-prod"
+    OAUTH_GOOGLE_CLIENT_ID: Optional[str] = None
+    OAUTH_GOOGLE_CLIENT_SECRET: Optional[str] = None
+    AUTH_ENABLED: bool = True
+
     # ── Job Board API Keys ──────────────────────────────────────────────
     BLUEDOOR_API_KEY: Optional[str] = None
 

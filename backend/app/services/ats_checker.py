@@ -174,7 +174,18 @@ async def check_resume(
         keywords = _fallback_keywords(jd_text)
     logger.info("Extracted %d JD keywords", len(keywords))
 
-    # 3. For each keyword missing from ATS-visible text, match to a bullet
+    # 3. Pre-compute bullet embeddings ONCE (concurrently & cached) for keyword matching
+    bullet_vectors: list[list[float]] = []
+    if parsed.bullets:
+        try:
+            import asyncio
+            bullet_vectors = list(await asyncio.gather(
+                *[router.embed(b.text) for b in parsed.bullets]
+            ))
+        except Exception as exc:
+            logger.warning("Failed to pre-compute bullet vectors (%s); fallback will be used", exc)
+
+    # 4. For each keyword missing from ATS-visible text, match to a bullet
     ats_lower = parsed.ats_visible_text.lower()
     keyword_gaps: list[KeywordGap] = []
     for keyword in keywords:
@@ -191,7 +202,7 @@ async def check_resume(
             continue
 
         # Otherwise, search bullets for related evidence via match_keyword_to_bullet
-        match = await _match_keyword_to_bullet(keyword, parsed)
+        match = await _match_keyword_to_bullet(keyword, parsed, bullet_vectors=bullet_vectors)
         if match is None:
             keyword_gaps.append(KeywordGap(
                 keyword=keyword,
@@ -249,6 +260,7 @@ async def check_resume(
 async def _match_keyword_to_bullet(
     keyword: str,
     parsed: ParsedResume,
+    bullet_vectors: list[list[float]] | None = None,
 ) -> tuple[ConfidenceTier, Any, float] | None:
     """Match a JD keyword against resume bullets using embedding similarity.
 
@@ -267,16 +279,15 @@ async def _match_keyword_to_bullet(
         if kw_lower in b.text.lower():
             return ConfidenceTier.VERIFIED, b, 1.0
 
-    # Otherwise attempt embedding similarity via ChromaDB (resume_sections)
+    # Otherwise attempt embedding similarity
     try:
-        # Embed the keyword, query the resume sections collection
+        # Embed the keyword
         query = await router.embed(keyword)
-        # Since bullets may not be in the store yet, compute cosine against
-        # bullet text embeddings on the fly via the store's embedding fn.
         from ..core.confidence import cosine_similarity
 
-        embed_fn = store._embedding_fn
-        bullet_vectors = embed_fn([b.text for b in bullets])
+        if not bullet_vectors:
+            embed_fn = store._embedding_fn
+            bullet_vectors = embed_fn([b.text for b in bullets])
 
         best_score = 0.0
         best_idx = 0
