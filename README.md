@@ -12,7 +12,7 @@ free-tier APIs as fallback when local inference would blow the 4 GB VRAM budget.
 
 **Version: 1.1** — Fresher Mode, employment-type classification, LinkedIn
 integration, background pipeline maintenance, Tesseract OCR for embedded images,
-and neo-brutalist dark/light theme UI.
+and hybrid neo-brutalist / tactical dark theme UI.
 
 [![GitHub stars](https://img.shields.io/github/stars/anubhavsanket/wayfarer?style=social)](https://github.com/anubhavsanket/wayfarer)
 [![GitHub license](https://img.shields.io/badge/license-Proprietary-blue.svg)](LICENSE)
@@ -20,7 +20,7 @@ and neo-brutalist dark/light theme UI.
 [![Python](https://img.shields.io/badge/Python-3.11%20%7C%203.12-blue?logo=python)](backend/requirements.txt)
 [![React](https://img.shields.io/badge/React-18-blue?logo=react)](frontend/package.json)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5-blue?logo=typescript)](frontend/tsconfig.json)
-[![Tests](https://img.shields.io/badge/Tests-91%20passing-brightgreen)](backend/tests/)
+[![Tests](https://img.shields.io/badge/Tests-102%20passing-brightgreen)](backend/tests/)
 
 ---
 
@@ -107,9 +107,9 @@ behalf.
 │   Stage 1       │      │       Stage 2         │     │       Stage 3         │
 │  Search Agent   │      │  Resume/ATS Checker    │     │   Job Matcher         │
 │                 │      │                        │     │                       │
-│ Search API      │      │ pdfplumber/python-docx │     │ bluedoor + LinkedIn   │
-│ (Tavily/Brave)  │      │ Tesseract OCR          │     │ Fresher Mode          │
-│ + Crawl4AI      │      │ Embedding matcher      │     │ Hybrid scoring        │
+│ Search API      │      │ Unstructured +         │     │ bluedoor + LinkedIn   │
+│ (Tavily/Brave)  │      │ pdfplumber fallback    │     │ Fresher Mode          │
+│ + Crawl4AI      │      │ Tesseract OCR          │     │ Hybrid scoring        │
 │ fetch/clean     │      │ Confidence-tiered      │     │ Legitimacy checks     │
 │                 │      │ redline generator      │     │ Background refresh    │
 └─────────────────┘      └────────────────────────┘     └───────────────────────┘
@@ -117,7 +117,7 @@ behalf.
         └───────────────────────────┴───────────────────────────┘
                                     │
                         ┌───────────▼───────────┐
-                        │       ChromaDB          │
+                        │        Qdrant          │
                         │  search_cache           │
                         │  resume_sections        │
                         │  job_postings           │
@@ -132,7 +132,7 @@ behalf.
   multimodal payloads for text-only models.
 - **Embedding layer** — `nomic-embed-text` via Ollama, kept local. Embeddings are
   cheap enough on a GTX 1650 that they don't need router fallback.
-- **ChromaDB** — one persistent store, three separate collections (`search_cache`,
+- **Qdrant** — one persistent store, three separate collections (`search_cache`,
   `resume_sections`, `job_postings`). Sharing the embedding space enables Stage 2
   ↔ Stage 3 reuse.
 - **Confidence scoring** — `backend/app/core/confidence.py`. The `Verified /
@@ -140,6 +140,8 @@ behalf.
   `match_keyword_to_bullet` function is used by both Stage 2 and Stage 3.**
 - **Resume graph** — `backend/app/core/resume_graph.py`. Graph-based structured
   resume memory for token-efficient per-posting matching.
+- **RAG engine** — `backend/app/core/rag_engine.py`. LlamaIndex-based RAG pipeline
+  with Qdrant vector store integration.
 
 ---
 
@@ -153,13 +155,20 @@ wayfarer/
 │   │   ├── config.py                # Pydantic Settings (.env-driven)
 │   │   ├── context.py               # Per-request ContextVar for header overrides
 │   │   ├── llm_router.py            # Multi-provider inference router
-│   │   ├── vector_store.py          # Multi-collection ChromaDB wrapper
+│   │   ├── exceptions.py            # Error handling, validation helpers
+│   │   ├── vector_store.py          # Multi-collection Qdrant wrapper
+│   │   ├── routers/
+│   │   │   ├── health.py            # GET /health
+│   │   │   ├── stage1.py            # POST /api/v1/search
+│   │   │   ├── stage2.py            # POST /api/v1/resume/check, save
+│   │   │   └── stage3.py            # POST /api/v1/jobs/match, refresh
 │   │   ├── models/
 │   │   │   ├── schemas.py           # Pydantic request/response models
 │   │   │   └── job_boards.py        # Board registry models + connector
 │   │   ├── core/
 │   │   │   ├── confidence.py        # Tier classifier + match_keyword_to_bullet
-│   │   │   └── resume_graph.py      # Graph-based structured resume memory
+│   │   │   ├── resume_graph.py      # Graph-based structured resume memory
+│   │   │   └── rag_engine.py        # LlamaIndex RAG pipeline over Qdrant
 │   │   ├── services/
 │   │   │   ├── search_api.py        # Tavily + Brave clients
 │   │   │   ├── web_fetch.py         # Crawl4AI concurrency-capped fetcher
@@ -173,7 +182,7 @@ wayfarer/
 │   │   │   └── legitimacy.py        # Ghost / no-sponsorship checks
 │   │   └── utils/
 │   │       └── cache.py             # Content-hash memoization
-│   ├── tests/                       # 56 tests (unit + integration)
+│   ├── tests/                       # 91 tests (unit + integration)
 │   ├── requirements.txt
 │   ├── pytest.ini
 │   └── Dockerfile
@@ -186,7 +195,7 @@ wayfarer/
 │   │   │   ├── JobMatch.tsx         # Stage 3 UI + Fresher Mode toggle
 │   │   │   └── Settings.tsx         # API keys + resume upload
 │   │   ├── components/
-│   │   │   ├── ui/                  # Button, Card, Sticker, ScoreBar
+│   │   │   ├── ui/                  # Button, Card, badge (Sticker), progress (ScoreBar)
 │   │   │   ├── Reveal.tsx           # Anime.js entrance animations
 │   │   │   └── LoadingIndicator.tsx # Animated loading dots
 │   │   ├── stores/
@@ -196,7 +205,9 @@ wayfarer/
 │   │   │   ├── api.ts               # Typed API client
 │   │   │   ├── types.ts             # Shared TypeScript types
 │   │   │   └── animations.ts        # Anime.js animation helpers
-│   │   ├── styles/globals.css       # Neo-brutalist design tokens + dark mode
+│   │   ├── styles/
+│   │   │   ├── globals.css          # Hybrid neo-brutalist / tactical design tokens
+│   │   │   └── legacy-neo-brutalist.css # Backup of the original palette
 │   │   └── test/setup.ts            # Vitest setup with matchMedia mock
 │   ├── vite.config.ts               # Vite + Vitest config
 │   ├── tailwind.config.js           # Custom palette + shadow system
@@ -208,6 +219,7 @@ wayfarer/
 ├── docker-compose.yml               # 5-service stack
 ├── setup.sh                         # One-command setup
 ├── .env.example                     # Copy to .env, fill in keys
+├── benchmark.py                     # Optional performance benchmark
 └── README.md
 ```
 
@@ -241,7 +253,7 @@ This starts five services:
 | Service | Port | Purpose |
 |---|---|---|
 | `api` | 8000 | FastAPI backend |
-| `chromadb` | 8001 | Vector store |
+| `qdrant` | 6333/6334 | Vector store (REST / gRPC) |
 | `ollama` | 11434 | Local inference + embeddings |
 | `redis` | 6379 | Background job queue |
 | `frontend` | 3000 | React UI served by nginx |
@@ -303,8 +315,8 @@ pip install -r requirements.txt
 ```bash
 # backend/.env
 OLLAMA_ENDPOINT=http://localhost:11434
-CHROMA_HOST=localhost
-CHROMA_PORT=8001
+QDRANT_HOST=localhost
+QDRANT_PORT=6333
 REDIS_URL=redis://localhost:6379
 LLM_PROVIDER=ollama
 ```
@@ -324,7 +336,7 @@ From the project root:
 uvicorn backend.app.main:app --reload --host 0.0.0.0 --port 8000
 ```
 
-ChromaDB falls back to a persistent local store at `./chroma_db/` automatically.
+Qdrant falls back to a persistent local store at `./qdrant_data/` automatically.
 
 ### 5. Run the frontend
 
@@ -348,13 +360,21 @@ Configuration is layered:
 
 | Provider | `.env` setting | API key needed? | Notes |
 |---|---|---|---|
-| `nvidia` | `LLM_PROVIDER=nvidia` | `NVIDIA_NIM_API_KEY` | Free tier, fast |
+| `ollama` | `LLM_PROVIDER=ollama` | No | Local, pull model first. **Default provider.** |
+| `nvidia` | `LLM_PROVIDER=nvidia` | `NVIDIA_NIM_API_KEY` | Free tier; model IDs must come from the live catalog (older models are EOL'd) |
 | `openrouter` | `LLM_PROVIDER=openrouter` | `OPENROUTER_API_KEY` | Free tier, wide model selection |
-| `ollama` | `LLM_PROVIDER=ollama` | No | Local, pull model first |
 | `lmstudio` | `LLM_PROVIDER=lmstudio` | No | Set `LMSTUDIO_ENDPOINT` + `LMSTUDIO_MODEL` |
 | `custom` | `LLM_PROVIDER=custom` | `CUSTOM_LLM_API_KEY` | Any OpenAI-compatible endpoint |
 
-The router always falls back through the provider list if the primary fails.
+The router always falls back through the provider list if the primary fails — even
+when a provider is explicitly selected, it will fall through the rest of the chain
+rather than failing hard.
+
+### Job board registry
+
+`config/job_boards.yaml` drives Stage 3 discovery. Each board declares the search
+query parameter name it expects (`q` for bluedoor, `keywords` for LinkedIn), so no
+per-board code is needed to route resume-derived keywords to the right provider.
 
 ---
 
@@ -363,7 +383,7 @@ The router always falls back through the provider list if the primary fails.
 ### `GET /health`
 
 ```json
-{"status":"ok","dependencies":[{"name":"chromadb","status":"up"},...]}
+{"status":"ok","dependencies":[{"name":"qdrant","status":"up"},...]}
 ```
 
 ### `POST /api/v1/search` — Stage 1
@@ -424,14 +444,16 @@ curl "http://localhost:8000/api/v1/jobs/match?resume_id=abc123&fresher_only=true
 
 ### `POST /api/v1/jobs/refresh` — Stage 3 background
 
-Re-fetches from all enabled boards and stores in ChromaDB.
+Re-fetches from all enabled boards and stores in Qdrant.
 
 ---
 
 ## The job board registry
 
 Every job source is defined in **`config/job_boards.yaml`**. Adding a new board
-is a config change, not a code change.
+is a config change, not a code change. Each board can specify the search query
+parameter name it expects via `query_param` (e.g. `q` for bluedoor, `keywords`
+for LinkedIn).
 
 ```yaml
 - name: bluedoor
@@ -441,6 +463,7 @@ is a config change, not a code change.
   auth: api_key
   api_key_env: "BLUEDOOR_API_KEY"
   rate_limit_per_min: 100
+  query_param: "q"
   field_mapping:
     title: "$.title"
     company: "$.org_name"
@@ -466,7 +489,7 @@ python -m pytest tests/test_stage1.py tests/test_stage2.py tests/test_stage3.py 
 python -m pytest tests/test_docker_e2e.py -v
 ```
 
-**Test suite: 56 backend tests + 10 frontend tests**, all passing.
+**Test suite: 91 backend tests + 11 frontend tests**, all passing.
 
 ---
 
@@ -485,25 +508,36 @@ python -m pytest tests/test_docker_e2e.py -v
 | **Side-by-side redlines** | ✅ | Original vs. suggested view in Resume Check |
 | **One-command setup** | ✅ | `bash setup.sh` or curl link |
 | **Tesseract OCR** | ✅ | Extract text from embedded images in DOCX resumes |
-| **Neo-brutalist UI** | ✅ | Dark/light theme, animated score bars, sticker badges |
+| **Hybrid theme UI** | ✅ | Neo-brutalist light mode + tactical obsidian dark mode |
 | **Stored resume** | ✅ | Upload once in Settings, used across all stages |
 | **OOXML track-changes** | ✅ | Resume save outputs Word-compatible tracked changes |
 | **Background refresh queue** | ✅ | Redis-backed job queue for async board refresh |
 | **Per-request overrides** | ✅ | Frontend settings sent as X-* headers per-request |
+| **Qdrant vector store** | ✅ | Migrated from ChromaDB; three collections shared across stages |
+| **Targeted job search** | ✅ | Resume-derived keywords routed per-board (q / keywords) |
+| **Board interleaving** | ✅ | Results balanced across providers, title+company embed fallback for empty JDs |
+| **Provider fallback chain** | ✅ | Explicitly-selected providers still fall through the router chain |
+| **PDF resume parsing** | ✅ | pdfplumber fallback fixes 500 on PDF uploads |
+| **Location-aware matching** | ✅ | Frontend location filters now sent to the job matcher API |
 
 ---
 
 ## Known limitations
 
 - **`bluedoor.sh` descriptions** — the API doesn't return JD descriptions in search
-  results, so experience classification uses titles only (often "unclear").
+  results. The matcher falls back to embedding `"<title> at <company>"`, so titles
+  still rank accurately even though experience classification is less precise.
 - **LinkedIn guest API** — returns HTML (parsed via regex), not structured JSON.
   Keep volume low, personal-use only.
+- **NVIDIA model IDs** — free-tier models are frequently EOL'd. `config.py` ships
+  with live catalog IDs, but they may need regenerating each release cycle.
 - **VRAM ceiling** — keep embeddings + local LLM under 4 GB total. Heavy inference
   is routed to APIs via the LLM Router.
 - **OOXML track-changes** — supported for resume save output. The UI redline view is HTML-based.
 - **Tesseract OCR accuracy** — low-resolution embedded images may produce noisy text. Icons under 80px are skipped.
 - **Python 3.11 / 3.12 only** — pinned dependencies don't build on 3.14.
+- **GPU requirement** — the `ollama` compose service reserves an NVIDIA GPU via
+  `deploy.reservations`. It runs CPU-only with degraded performance if no GPU is present.
 
 ---
 
