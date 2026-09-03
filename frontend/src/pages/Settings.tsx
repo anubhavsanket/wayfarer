@@ -69,9 +69,9 @@ function UserAuthCard() {
           <h3 className="font-display font-bold">User Account & OAuth</h3>
         </div>
         {currentUser ? (
-          <Sticker variant="cyan">Authenticated ({currentUser.email})</Sticker>
+          <Sticker variant="blue">Authenticated ({currentUser.email})</Sticker>
         ) : (
-          <Sticker variant="amber">Local Mode (Unauthenticated)</Sticker>
+          <Sticker variant="muted">Local Mode (Unauthenticated)</Sticker>
         )}
       </div>
 
@@ -388,8 +388,12 @@ export default function SettingsPage() {
         </div>
       </Card>
 
-      {/* Resume Upload */}
+      {/* OAuth */}
+      <UserAuthCard />
+
+      {/* Primary Resume Upload */}
       <ResumeUploadCard />
+
 
       {/* Actions */}
       <Card className="p-6">

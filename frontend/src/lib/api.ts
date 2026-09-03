@@ -64,15 +64,6 @@ export const api = {
   // Health
   health: () => request<HealthResponse>("/health"),
 
-  // Auth
-  authLogin: (payload: { email: string; name?: string }) =>
-    request<{ access_token: string; user_id: string; email: string; name: string }>("/api/v1/auth/login", {
-      method: "POST",
-      body: JSON.stringify(payload),
-    }),
-  getMe: () =>
-    request<{ user_id: string; email: string; name: string }>("/api/v1/auth/me"),
-
   // Stage 1 — Search
   search: (query: string, maxSources = 5) =>
     request<SearchResponse>("/api/v1/search", {

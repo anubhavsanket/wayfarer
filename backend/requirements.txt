@@ -11,6 +11,10 @@ PyYAML==6.0.2
 # HTTP client
 httpx==0.27.2
 
+# Auth & encryption (OAuth, JWT tokens, Fernet key storage)
+python-jose[cryptography]==3.3.0
+cryptography==42.0.8
+
 # Vector store + embeddings
 qdrant-client==1.12.1
 
