@@ -20,6 +20,8 @@ data/uploads/*
 chroma_db/
 cache/
 logs/
+*.db
+backend/data/*.db
 
 # Editor
 .vscode/

@@ -96,3 +96,37 @@ export interface JobMatchResponse {
   unclear_matches?: JobMatch[];
   aggregate_gaps: AggregateGap[];
 }
+
+// Tracker — saved jobs + applications
+
+export interface SavedJob {
+  job_id: string;
+  title: string;
+  company: string;
+  apply_url?: string;
+  source?: string;
+  location?: string;
+  match_score?: number;
+  saved_at: string;
+}
+
+export type ApplicationStatus = "applied" | "interview" | "offer" | "rejected";
+
+export interface Application {
+  id: number;
+  job_id: string;
+  title: string;
+  company: string;
+  apply_url?: string;
+  source?: string;
+  location?: string;
+  match_score?: number;
+  status: ApplicationStatus;
+  date_applied: string;
+  notes: string;
+  resume_id?: string | null;
+}
+
+export interface CoverLetterResponse {
+  cover_letter: string;
+}

@@ -10,23 +10,43 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import time
+import uuid
 from contextlib import asynccontextmanager
+from contextvars import ContextVar
 
 import redis.asyncio as aioredis
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
+from . import db
 from .config import settings
 from .context import RequestOverrides, request_overrides_var
 from .exceptions import WayfarerError
-from .routers import health, stage1, stage2, stage3
+from .routers import health, stage1, stage2, stage3, tracker
 from .services import jobs_queue
+from .utils.cache import set_redis as cache_set_redis
+
+# Per-request correlation id, surfaced in log lines.
+request_id_var: ContextVar[str] = ContextVar("request_id", default="-")
+
+
+class RequestIdFilter(logging.Filter):
+    """Add the current request id to every log record."""
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        record.request_id = request_id_var.get()
+        return True
+
 
 logging.basicConfig(
     level=logging.INFO,
-    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+    format="%(asctime)s - %(name)s - %(levelname)s - [%(request_id)s] - %(message)s",
 )
+for _handler in logging.root.handlers:
+    if not any(isinstance(f, RequestIdFilter) for f in _handler.filters):
+        _handler.addFilter(RequestIdFilter())
 logger = logging.getLogger(__name__)
 
 # Global clients
@@ -51,16 +71,29 @@ async def lifespan(app: FastAPI):
         logger.warning("Redis connection failed (%s); running without queue/cache", exc)
         redis_client = None
 
-    # Start the Redis-backed refresh worker
+    # Share the single Redis connection with the cache layer.
+    cache_set_redis(redis_client)
+
+    # Start the Redis-backed refresh worker (only if Redis is available).
     refresh_stop_event = asyncio.Event()
     jobs_queue.redis_client = redis_client
-    refresh_worker_task = asyncio.create_task(
-        jobs_queue.run_worker(redis_client, stop_event=refresh_stop_event)
-    )
+    if redis_client is not None:
+        refresh_worker_task = asyncio.create_task(
+            jobs_queue.run_worker(redis_client, stop_event=refresh_stop_event)
+        )
+    else:
+        logger.warning("Redis unavailable; background refresh worker not started")
+
+    # Initialise the SQLite tracker DB.
+    try:
+        db.init_db()
+    except Exception as exc:
+        logger.error("Tracker DB initialisation failed (%s)", exc)
 
     yield
 
     # Shutdown
+    db.close_db()
     if refresh_worker_task:
         if refresh_stop_event:
             refresh_stop_event.set()
@@ -73,6 +106,8 @@ async def lifespan(app: FastAPI):
     if redis_client:
         await redis_client.aclose()
         redis_client = None
+        # The cache layer's lazy connection is only used when the shared
+        # client was unavailable; nothing extra to close here.
 
 
 app = FastAPI(
@@ -106,6 +141,32 @@ app.include_router(health.router)
 app.include_router(stage1.router)
 app.include_router(stage2.router)
 app.include_router(stage3.router)
+app.include_router(tracker.router)
+
+
+# ---------------------------------------------------------------------------
+# Request-ID + timing middleware (outermost request logging)
+# ---------------------------------------------------------------------------
+
+
+@app.middleware("http")
+async def request_logging_middleware(request: Request, call_next):
+    """Assign a request id and log method/path/status/duration for correlation."""
+    rid = uuid.uuid4().hex[:12]
+    request_id_var.set(rid)
+    start = time.perf_counter()
+    try:
+        response = await call_next(request)
+        duration_ms = (time.perf_counter() - start) * 1000
+        logger.info(
+            "%s %s -> %s (%.0f ms)",
+            request.method, request.url.path, response.status_code, duration_ms,
+        )
+        return response
+    except Exception:
+        duration_ms = (time.perf_counter() - start) * 1000
+        logger.exception("%s %s failed after %.0f ms", request.method, request.url.path, duration_ms)
+        raise
 
 
 # ---------------------------------------------------------------------------

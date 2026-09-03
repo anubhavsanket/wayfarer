@@ -22,6 +22,10 @@ services:
       - redis
     volumes:
       - ./data/uploads:/app/data/uploads
+      # Named volume so the SQLite tracker DB (data/wayfarer.db under /app/data)
+      # survives container recreation. The deeper bind mount above still wins for
+      # uploads while this persists the application-tracker state.
+      - wayfarer_data:/app/data
       - ./config:/app/config:ro
 
   qdrant:
@@ -63,3 +67,4 @@ services:
 volumes:
   qdrant_data:
   ollama_data:
+  wayfarer_data:

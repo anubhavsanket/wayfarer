@@ -210,5 +210,65 @@ class BackgroundRefreshResponse(BaseModel):
 class RefreshStatusResponse(BaseModel):
     job_id: str
     status: str
+
     result: dict | None = None
     error: str | None = None
+
+
+# ---------- Tracker (saved jobs + applications) ----------
+
+class SavedJobCreate(BaseModel):
+    job_id: str
+    title: str
+    company: str
+    apply_url: str | None = ""
+    source: str | None = ""
+    location: str | None = ""
+    match_score: float = 0.0
+
+
+class SavedJob(SavedJobCreate):
+    saved_at: str
+
+
+class ApplicationCreate(BaseModel):
+    job_id: str
+    title: str
+    company: str
+    apply_url: str | None = ""
+    source: str | None = ""
+    location: str | None = ""
+    match_score: float = 0.0
+    resume_id: str | None = ""
+
+
+class ApplicationUpdate(BaseModel):
+    status: str | None = None
+    notes: str | None = None
+
+
+class Application(BaseModel):
+    id: int
+    job_id: str
+    title: str
+    company: str
+    apply_url: str | None = ""
+    source: str | None = ""
+    location: str | None = ""
+    match_score: float = 0.0
+    status: str = "applied"
+    date_applied: str
+    notes: str | None = ""
+    resume_id: str | None = ""
+
+
+# ---------- Cover letter ----------
+
+class CoverLetterRequest(BaseModel):
+    resume_id: str
+    job: dict
+
+
+class CoverLetterResponse(BaseModel):
+    cover_letter: str
+

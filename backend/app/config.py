@@ -53,9 +53,8 @@ class Settings(BaseSettings):
     # ── Model selection ─────────────────────────────────────────────────
     # Both tiers use the same model per provider to keep things simple.
     # For LM Studio / custom: the LMSTUDIO_MODEL / CUSTOM_LLM_MODEL is used.
-    # NOTE: NVIDIA's meta/llama-3.1-8b-instruct + llama-3.3-70b hit EOL on
-    # 2026-08-26 (HTTP 410). deepseek-v4-flash is a currently-listed catalog
-    # model; swap to whatever your key is entitled to (see /v1/models).
+    # NOTE: NVIDIA model IDs change often; swap to whatever your key is entitled
+    # to (see /v1/models). The free catalog IDs listed below may go stale.
     LLM_MODELS: dict = {
         "simple": {
             "nvidia": "deepseek-ai/deepseek-v4-flash-0731",
@@ -103,6 +102,14 @@ class Settings(BaseSettings):
     # ── Timeouts ────────────────────────────────────────────────────────
     REQUEST_TIMEOUT: int = 30
     RATE_LIMIT_BACKOFF: float = 1.5
+
+    # ── Tracker (SQLite) ─────────────────────────────────────────────────
+    # Path is relative to the backend working dir (/app in the container). A
+    # named Docker volume (wayfarer_data) is mounted at /app/data in compose so
+    # the DB file survives container recreation.
+    TRACKER_DB_PATH: str = "data/wayfarer.db"
+    # Max size (bytes) for uploaded resume files, 10 MB.
+    MAX_UPLOAD_BYTES: int = 10 * 1024 * 1024
 
     # ── Performance ─────────────────────────────────────────────────────
     MAX_VRAM_GB: int = 4

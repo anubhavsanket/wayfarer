@@ -38,14 +38,21 @@ from ..config import settings
 logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
-# Module-level Redis connection (lazy, initialised on first use)
+# Redis connection — shared with the app lifespan via set_redis().
+# Falls back to creating a lazy connection if set_redis() was never called.
 # ---------------------------------------------------------------------------
 
 _redis: aioredis.Redis | None = None
 
 
+def set_redis(client: aioredis.Redis | None) -> None:
+    """Called from main.py lifespan to share the app Redis client."""
+    global _redis
+    _redis = client
+
+
 def _get_redis() -> aioredis.Redis | None:
-    """Return the Redis client, creating it lazily on first call."""
+    """Return the Redis client. Uses the shared client if available."""
     global _redis
     if _redis is not None:
         return _redis
@@ -53,12 +60,11 @@ def _get_redis() -> aioredis.Redis | None:
         _redis = aioredis.from_url(
             settings.REDIS_URL,
             decode_responses=True,
-            socket_connect_timeout=3,
-            socket_timeout=5,
+            socket_connect_timeout=5,
         )
         return _redis
     except Exception as exc:
-        logger.warning("Redis connection failed: %s", exc)
+        logger.warning("Cache Redis connection failed (%s)", exc)
         return None
 
 

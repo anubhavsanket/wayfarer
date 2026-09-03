@@ -1,11 +1,12 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import {
   Briefcase, ExternalLink, AlertTriangle, ChevronDown, ChevronUp,
   GraduationCap, MapPin, ToggleLeft, ToggleRight, SlidersHorizontal,
+  Bookmark, BookmarkCheck, ClipboardList, Check,
 } from "lucide-react";
 
-import { api } from "@/lib/api";
+import { api, ApiError } from "@/lib/api";
 import { AggregateGap, JobMatch } from "@/lib/types";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -13,6 +14,7 @@ import { Sticker } from "@/components/ui/badge";
 import { ScoreBar } from "@/components/ui/progress";
 import { Reveal, Stagger } from "@/components/Reveal";
 import { LoadingIndicator } from "@/components/LoadingIndicator";
+import { TrackerPanel } from "@/components/TrackerPanel";
 
 /* ── helpers ────────────────────────────────────────────────────────── */
 
@@ -39,7 +41,16 @@ function sourceVariant(source: string) {
 
 /* ── Job Card ───────────────────────────────────────────────────────── */
 
-function JobCard({ job }: { job: JobMatch }) {
+function JobCard({ job, saved, applied,
+  onToggleSave, onMarkApplied, busy,
+}: {
+  job: JobMatch;
+  saved: boolean;
+  applied: boolean;
+  onToggleSave: (job: JobMatch) => void;
+  onMarkApplied: (job: JobMatch) => void;
+  busy?: boolean;
+}) {
   return (
     <Card className="p-5">
       <div className="flex items-start justify-between gap-4">
@@ -71,6 +82,11 @@ function JobCard({ job }: { job: JobMatch }) {
                 <Sticker variant="destructive">⚠ {flag}</Sticker>
               </span>
             ))}
+            {applied && (
+              <Sticker variant="verified">
+                <Check className="h-3 w-3" /> Applied
+              </Sticker>
+            )}
           </div>
 
           {/* Gap chips */}
@@ -85,20 +101,44 @@ function JobCard({ job }: { job: JobMatch }) {
           )}
         </div>
 
-        {/* Score + Apply */}
+        {/* Score + actions */}
         <div className="flex shrink-0 flex-col items-end gap-2 pl-4">
           <span className="font-display text-3xl font-bold tabular-nums leading-none">
             {(job.match_score * 100).toFixed(0)}%
           </span>
+          <div className="flex items-center gap-1.5">
+            {/* Bookmark / save */}
+            <button
+              onClick={() => onToggleSave(job)}
+              disabled={busy}
+              title={saved ? "Remove from saved" : "Save for later"}
+              aria-label={saved ? "Remove from saved" : "Save for later"}
+              className="inline-flex items-center gap-1 rounded-md border-2 border-ink bg-card px-2 py-1.5 text-xs font-semibold text-foreground shadow-hard-sm transition-all duration-150 hover:-translate-y-0.5 hover:shadow-hard active:translate-y-0.5 active:shadow-hard-none dark:border-border dark:bg-beige-deep dark:shadow-sm"
+            >
+              {saved
+                ? <BookmarkCheck className="h-3 w-3 text-blue" />
+                : <Bookmark className="h-3 w-3" />}
+            </button>
+            {/* Mark as applied */}
+            <button
+              onClick={() => onMarkApplied(job)}
+              disabled={busy || applied}
+              title={applied ? "Already tracked as applied" : "Add to application tracker"}
+              aria-label="Add to application tracker"
+              className="inline-flex items-center gap-1 rounded-md border-2 border-ink bg-blue px-2 py-1.5 text-xs font-semibold text-white shadow-hard-sm transition-all duration-150 hover:-translate-y-0.5 hover:shadow-hard active:translate-y-0.5 active:shadow-hard-none disabled:opacity-50 disabled:pointer-events-none dark:border-border dark:bg-blue-deep dark:shadow-sm"
+            >
+              <ClipboardList className="h-3 w-3" />
+              Applied
+            </button>
+          </div>
           {job.apply_url && (
             <a
               href={job.apply_url}
               target="_blank"
               rel="noopener noreferrer"
-              className="inline-flex items-center gap-1 rounded-md border-2 border-ink bg-blue px-3 py-1.5 text-xs font-semibold text-white shadow-hard-sm transition-all duration-150 hover:-translate-y-0.5 hover:shadow-hard active:translate-y-0.5 active:shadow-hard-none"
+              className="inline-flex items-center gap-1 text-xs font-semibold text-blue underline"
             >
-              Apply
-              <ExternalLink className="h-3 w-3" />
+              Apply <ExternalLink className="h-3 w-3" />
             </a>
           )}
         </div>
@@ -257,6 +297,85 @@ export default function JobMatchPage() {
   const [showUnclear, setShowUnclear] = useState(false);
   const [showFilters, setShowFilters] = useState(false);
 
+  // Application tracker access (button-opened, not a top-level tab).
+  const [trackerOpen, setTrackerOpen] = useState(false);
+
+  // Track which jobs are saved / applied so cards reflect live state.
+  const [savedIds, setSavedIds] = useState<Set<string>>(new Set());
+  const [appliedIds, setAppliedIds] = useState<Set<string>>(new Set());
+  const [trackerBusy, setTrackerBusy] = useState(false);
+  const [trackerError, setTrackerError] = useState<string | null>(null);
+
+  // Primary resume from localStorage
+  const resumeId = localStorage.getItem("resume_id") ?? "";
+  const resumeFileName = localStorage.getItem("resume_filename") ?? "";
+  const hasResume = !!resumeId;
+
+  // Load saved/job state once so cards show bookmarked/applied badges.
+  useEffect(() => {
+    let mounted = true;
+    api
+      .listSaved()
+      .then((saved) => mounted && setSavedIds(new Set(saved.map((s) => s.job_id))))
+      .catch(() => {});
+    api
+      .listApplications()
+      .then((apps) => mounted && setAppliedIds(new Set(apps.map((a) => a.job_id))))
+      .catch(() => {});
+    return () => {
+      mounted = false;
+    };
+  }, []);
+
+  const toggleSave = (job: JobMatch) => {
+    if (trackerBusy) return;
+    setTrackerBusy(true);
+    setTrackerError(null);
+    const already = savedIds.has(job.job_id);
+    const jobForApi = {
+      job_id: job.job_id,
+      title: job.title,
+      company: job.company,
+      apply_url: job.apply_url,
+      source: job.source,
+      location: job.location,
+      match_score: job.match_score,
+    };
+    (already ? api.unsaveJob(job.job_id) : api.saveJob(jobForApi))
+      .then(() => {
+        setSavedIds((prev) => {
+          const next = new Set(prev);
+          if (already) next.delete(job.job_id);
+          else next.add(job.job_id);
+          return next;
+        });
+      })
+      .catch((e) => setTrackerError(e instanceof ApiError ? e.message : "Tracker action failed."))
+      .finally(() => setTrackerBusy(false));
+  };
+
+  const markApplied = (job: JobMatch) => {
+    if (trackerBusy || appliedIds.has(job.job_id)) return;
+    setTrackerBusy(true);
+    setTrackerError(null);
+    api
+      .createApplication({
+        job_id: job.job_id,
+        title: job.title,
+        company: job.company,
+        apply_url: job.apply_url,
+        source: job.source,
+        location: job.location,
+        match_score: job.match_score,
+        resume_id: resumeId,
+      })
+      .then((a) => {
+        setAppliedIds((prev) => new Set(prev).add(a.job_id));
+      })
+      .catch((e) => setTrackerError(e instanceof ApiError ? e.message : "Failed to add application."))
+      .finally(() => setTrackerBusy(false));
+  };
+
   // Editable filter state
   const [maxAgeDays, setMaxAgeDays] = useState(30);
   const [minScore, setMinScore] = useState(0);
@@ -292,11 +411,6 @@ export default function JobMatchPage() {
     setSourceFilter("");
     setAppliedFilters({ maxAgeDays: 30, minScore: 0, cityFilter: "", locationMode: "specific_city", remoteOk: false, sourceFilter: "" });
   };
-
-  // Primary resume from localStorage
-  const resumeId = localStorage.getItem("resume_id") ?? "";
-  const resumeFileName = localStorage.getItem("resume_filename") ?? "";
-  const hasResume = !!resumeId;
 
   const { data, isLoading, error, refetch } = useQuery({
     queryKey: ["jobs", resumeId, testMode, fresherOnly, appliedFilters],
@@ -345,12 +459,29 @@ export default function JobMatchPage() {
     <div className="space-y-4">
       {/* ── Controls ─────────────────────────────────────────── */}
       <Card className="p-6">
-        <h2 className="font-display mb-1 text-lg font-bold">Job Matcher</h2>
+        <div className="mb-1 flex items-start justify-between gap-4">
+          <h2 className="font-display text-lg font-bold">Job Matcher</h2>
+          <Button
+            onClick={() => setTrackerOpen(true)}
+            variant="outline"
+            size="sm"
+            className="shrink-0"
+          >
+            <ClipboardList className="h-3.5 w-3.5" />
+            Tracker
+          </Button>
+        </div>
         <p className="mb-4 text-sm text-muted-foreground">
           {hasResume
             ? "Matching postings against your main resume."
             : "Upload your resume in Settings first, then come back here."}
         </p>
+
+        {trackerError && (
+          <div className="mb-3 rounded-md border border-destructive bg-destructive/10 p-2 text-xs text-destructive">
+            {trackerError}
+          </div>
+        )}
 
         {hasResume ? (
           <div className="mb-3 flex flex-wrap items-center gap-3 rounded-lg bg-blue-pale p-3 text-sm border border-blue/20">
@@ -455,7 +586,15 @@ export default function JobMatchPage() {
                 {appliedFilters.minScore > 0 ? ` (≥${appliedFilters.minScore}% match)` : ""}
               </p>
               {matches.map((job: JobMatch) => (
-                <JobCard key={job.job_id} job={job} />
+                <JobCard
+                  key={job.job_id}
+                  job={job}
+                  saved={savedIds.has(job.job_id)}
+                  applied={appliedIds.has(job.job_id)}
+                  onToggleSave={toggleSave}
+                  onMarkApplied={markApplied}
+                  busy={trackerBusy}
+                />
               ))}
             </Stagger>
           )}
@@ -476,7 +615,15 @@ export default function JobMatchPage() {
               {showUnclear && (
                 <Stagger className="mt-3 space-y-3">
                   {unclearMatches.map((job: JobMatch) => (
-                    <JobCard key={job.job_id} job={job} />
+                    <JobCard
+                      key={job.job_id}
+                      job={job}
+                      saved={savedIds.has(job.job_id)}
+                      applied={appliedIds.has(job.job_id)}
+                      onToggleSave={toggleSave}
+                      onMarkApplied={markApplied}
+                      busy={trackerBusy}
+                    />
                   ))}
                 </Stagger>
               )}
@@ -506,6 +653,20 @@ export default function JobMatchPage() {
           )}
         </>
       )}
+
+      {/* Tracker accessed via a button (not a top-level tab). */}
+      <TrackerPanel
+        open={trackerOpen}
+        onOpenChange={(v) => {
+          setTrackerOpen(v);
+          // Refresh the saved/applied badges when the panel closes.
+          if (!v) {
+            api.listSaved().then((s) => setSavedIds(new Set(s.map((x) => x.job_id)))).catch(() => {});
+            api.listApplications().then((a) => setAppliedIds(new Set(a.map((x) => x.job_id)))).catch(() => {});
+          }
+        }}
+        resumeId={resumeId}
+      />
     </div>
   );
 }
