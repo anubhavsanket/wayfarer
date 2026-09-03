@@ -4,13 +4,13 @@
 
 > A locally-hosted, RAG-driven job search platform built in three connected stages:
 > a **web search agent**, a **RAG-based ATS resume checker with redlining**, and a
-> **live job-posting matcher**. The retrieval, scoring, and matching logic is owned
-> and built directly — not delegated to a general-purpose coding agent's context window.
+> **live job-posting matcher**. We write and own the retrieval, scoring, and matching
+> logic directly instead of delegating it to an agent's context window.
 
-Built and designed to actually be used for the author's own job search. Calls out to
-free-tier APIs as fallback when local inference would blow the 4 GB VRAM budget.
+Built to be used for the author's own job search. Calls free-tier APIs when local
+inference would blow the 4 GB VRAM budget.
 
-**Version: 1.1** — Fresher Mode, employment-type classification, LinkedIn
+Current features: Fresher Mode, employment-type classification, LinkedIn
 integration, background pipeline maintenance, Tesseract OCR for embedded images,
 and hybrid neo-brutalist / tactical dark theme UI.
 
@@ -41,7 +41,7 @@ The script clones the repo, creates `.env`, pulls Docker images, starts all 5 se
 and pulls the embedding model. Takes about 2 minutes on first run.
 
 After setup, open **http://localhost:3000** and go to the **Settings** tab to enter
-your API keys — or edit `.env` directly.
+your API keys, or edit `.env` directly.
 
 ---
 
@@ -55,7 +55,7 @@ your API keys — or edit `.env` directly.
 6. [API reference](#api-reference)
 7. [The job board registry](#the-job-board-registry)
 8. [Testing](#testing)
-9. [What's in v1.1](#whats-in-v11)
+9. [Release highlights](#release-highlights)
 10. [Known limitations](#known-limitations)
 
 ---
@@ -68,27 +68,26 @@ your API keys — or edit `.env` directly.
 | **2. ATS Resume Checker** | "Check my resume against this JD, tell me exactly what to change and why." | `POST /api/v1/resume/check` |
 | **3. Job Matcher** | "Show me live postings ranked by fit, with apply links." | `GET /api/v1/jobs/match` |
 
-Every output is **human-in-the-loop**: the system evaluates, ranks, and drafts — it
-never submits, auto-fills, or clicks anything on a third-party site on the user's
-behalf.
+Every output keeps you in the loop. Wayfarer evaluates, ranks, and drafts. You
+submit applications, fill forms, and click through to third-party sites yourself.
 
 ### Differentiators
 
-- **Owned RAG pipeline** — embeddings, vector store, hybrid scoring are all
-  in-process. No `Claude Code + LaTeX` or `prompt orchestration over markdown` here.
-- **Honest substitution** — every keyword suggestion in Stage 2 is traceable to a
-  real resume bullet. The hard rule: gaps stay gaps, never auto-inserted.
-- **Confidence-tiered redlines** — `Verified` / `Reworded` / `Gap`, the third of
-  which is genuinely surfaced, not hidden.
+- **Owned RAG pipeline** — embeddings, vector store, and hybrid scoring run
+  in-process. The retrieval code is hand-written rather than scaffolded by an agent.
+- **Honest substitution** — each keyword suggestion in Stage 2 traces to a real
+  resume bullet. Gaps get flagged, never silently filled.
+- **Confidence-tiered redlines** — `Verified` / `Reworded` / `Gap`. The `Gap` tier
+  shows up in the output, never dropped.
 - **Multi-provider inference** — rate-limit-aware router with NVIDIA NIM →
   OpenRouter → local Ollama fallback. Free tiers only.
-- **Config-driven job boards** — adding a board = a YAML entry, not a code change.
+- **Config-driven job boards** — adding a board is a YAML entry, no code needed.
 - **Fresher Mode** — filter postings to entry-level/junior roles using a small
   local LLM (qwen3:0.6b) for experience-level classification.
 - **Tesseract OCR** — extracts text from embedded images in DOCX resumes (profile
-  photos, diagrams, infographics) so the ATS checker sees everything.
-- **Neo-brutalist UI** — dark/light theme toggle, animated score bars, sticker
-  badges, anime.js entrance animations.
+  photos, diagrams, infographics) so the checker reads parts a plain parser would miss.
+- **Hybrid theme UI** — neo-brutalist light mode, tactical obsidian dark mode,
+  animated score bars, sticker badges, anime.js entrance animations.
 
 ---
 
@@ -136,8 +135,8 @@ behalf.
   `resume_sections`, `job_postings`). Sharing the embedding space enables Stage 2
   ↔ Stage 3 reuse.
 - **Confidence scoring** — `backend/app/core/confidence.py`. The `Verified /
-  Reworded / Gap` classifier from the real-estate RAG project. **The same
-  `match_keyword_to_bullet` function is used by both Stage 2 and Stage 3.**
+  Reworded / Gap` classifier from the real-estate RAG project. **Both Stage 2 and
+  Stage 3 call the same `match_keyword_to_bullet` function.**
 - **Resume graph** — `backend/app/core/resume_graph.py`. Graph-based structured
   resume memory for token-efficient per-posting matching.
 - **RAG engine** — `backend/app/core/rag_engine.py`. LlamaIndex-based RAG pipeline
@@ -286,7 +285,7 @@ curl http://localhost:8000/health
 4. Go to **Resume Check** tab — paste a JD to get ATS analysis (resume is already loaded)
 5. Go to **Job Match** tab — see live postings ranked by fit (uses your resume automatically)
 
-The resume you upload in Settings is used across all stages — no need to re-upload.
+The resume you upload in Settings carries across all stages, so you upload it once.
 
 - **API docs:** http://localhost:8000/docs — interactive Swagger UI
 
@@ -366,9 +365,8 @@ Configuration is layered:
 | `lmstudio` | `LLM_PROVIDER=lmstudio` | No | Set `LMSTUDIO_ENDPOINT` + `LMSTUDIO_MODEL` |
 | `custom` | `LLM_PROVIDER=custom` | `CUSTOM_LLM_API_KEY` | Any OpenAI-compatible endpoint |
 
-The router always falls back through the provider list if the primary fails — even
-when a provider is explicitly selected, it will fall through the rest of the chain
-rather than failing hard.
+The router falls back through the provider list whenever the primary fails. Even an
+explicitly selected provider falls through the chain instead of erroring out.
 
 ### Job board registry
 
@@ -450,8 +448,8 @@ Re-fetches from all enabled boards and stores in Qdrant.
 
 ## The job board registry
 
-Every job source is defined in **`config/job_boards.yaml`**. Adding a new board
-is a config change, not a code change. Each board can specify the search query
+Each job source is defined in **`config/job_boards.yaml`**. You add a board by
+adding a YAML entry, no code changes needed. Each board can specify the search query
 parameter name it expects via `query_param` (e.g. `q` for bluedoor, `keywords`
 for LinkedIn).
 
@@ -493,7 +491,7 @@ python -m pytest tests/test_docker_e2e.py -v
 
 ---
 
-## What's in v1.1
+## Release highlights
 
 | Feature | Status | Description |
 |---|---|---|
@@ -543,5 +541,5 @@ python -m pytest tests/test_docker_e2e.py -v
 
 ## License
 
-Proprietary — built for the author's personal job search automation and as an AI
+Proprietary. Built for the author's personal job search automation and as an AI
 engineering portfolio piece.
