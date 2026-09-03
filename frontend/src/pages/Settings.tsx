@@ -267,30 +267,36 @@ export default function SettingsPage() {
   };
 
   return (
-    <div className="space-y-4">
+    <div className="max-w-4xl mx-auto space-y-8 pb-12">
       {/* Header */}
-      <Card className="p-6">
-        <div className="mb-2 flex items-center gap-2">
-          <SettingsIcon className="h-5 w-5 text-blue" />
-          <h2 className="font-display text-lg font-bold">API Keys & Settings</h2>
+      <div className="border-b-2 border-ink pb-6">
+        <div className="flex items-center gap-3">
+          <SettingsIcon className="h-8 w-8 text-blue" />
+          <h1 className="font-display text-4xl font-black text-ink">System Config</h1>
         </div>
-        <p className="text-sm text-muted-foreground">
-          Enter your API keys here. Keys are stored in your browser's localStorage
-          and sent as headers to the backend — they are never committed to git.
-          You can also use the <code className="rounded bg-beige-deep px-1 font-mono text-xs">.env</code> file for Docker deployments.
+        <p className="mt-2 text-sm text-ink-soft max-w-lg">
+          Configure your LLM providers, search API keys, and manage your Wayfarer account identity. Changes are saved locally or synchronized to your secure account.
         </p>
-      </Card>
+      </div>
+
+      <div className="grid gap-6 md:grid-cols-2">
+        <UserAuthCard />
+        <ResumeUploadCard />
+      </div>
 
       {/* LLM Provider */}
       <Card className="p-6">
-        <h3 className="font-display mb-4 font-bold">LLM Provider</h3>
-        <div className="space-y-4">
+        <div className="flex items-center justify-between mb-6">
+          <h3 className="font-display text-xl font-bold text-ink">LLM Engine</h3>
+          <span className="text-xs font-mono text-ink-soft uppercase tracking-wider">Tier: Complex/Simple</span>
+        </div>
+        <div className="space-y-6">
           <div className="space-y-1.5">
             <label className="text-sm font-semibold">Primary Provider</label>
             <select
               value={settings.llm_provider}
               onChange={(e) => update({ llm_provider: e.target.value })}
-              className="w-full rounded-lg border border-border bg-card px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-cyan"
+              className="w-full rounded-lg border-2 border-ink bg-card px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue"
             >
               {PROVIDERS.map((p) => (
                 <option key={p.value} value={p.value}>{p.label}</option>
@@ -298,122 +304,103 @@ export default function SettingsPage() {
             </select>
           </div>
 
-          {settings.llm_provider === "nvidia" && (
-            <>
-              <Field label="NVIDIA NIM API Key" value={settings.nvidia_api_key}
-                onChange={(v) => update({ nvidia_api_key: v })}
-                placeholder="nvapi-..." type="password" />
-              <Field label="NVIDIA NIM Endpoint" value={settings.nvidia_endpoint}
-                onChange={(v) => update({ nvidia_endpoint: v })}
-                placeholder="https://integrate.api.nvidia.com/v1" />
-            </>
-          )}
+          <div className="grid md:grid-cols-2 gap-4 border-t border-ink/10 pt-6">
+            {settings.llm_provider === "nvidia" && (
+              <>
+                <Field label="NVIDIA NIM API Key" value={settings.nvidia_api_key}
+                  onChange={(v) => update({ nvidia_api_key: v })}
+                  placeholder="nvapi-..." type="password" />
+                <Field label="NVIDIA NIM Endpoint" value={settings.nvidia_endpoint}
+                  onChange={(v) => update({ nvidia_endpoint: v })}
+                  placeholder="https://integrate.api.nvidia.com/v1" />
+              </>
+            )}
 
-          {settings.llm_provider === "openrouter" && (
-            <>
-              <Field label="OpenRouter API Key" value={settings.openrouter_api_key}
-                onChange={(v) => update({ openrouter_api_key: v })}
-                placeholder="sk-or-..." type="password" />
-              <Field label="OpenRouter Endpoint" value={settings.openrouter_endpoint}
-                onChange={(v) => update({ openrouter_endpoint: v })}
-                placeholder="https://openrouter.ai/api/v1" />
-            </>
-          )}
+            {settings.llm_provider === "openrouter" && (
+              <>
+                <Field label="OpenRouter API Key" value={settings.openrouter_api_key}
+                  onChange={(v) => update({ openrouter_api_key: v })}
+                  placeholder="sk-or-..." type="password" />
+                <Field label="OpenRouter Endpoint" value={settings.openrouter_endpoint}
+                  onChange={(v) => update({ openrouter_endpoint: v })}
+                  placeholder="https://openrouter.ai/api/v1" />
+              </>
+            )}
 
-          {settings.llm_provider === "ollama" && (
-            <Field label="Ollama Endpoint" value={settings.ollama_endpoint}
-              onChange={(v) => update({ ollama_endpoint: v })}
-              placeholder="http://localhost:11434" />
-          )}
+            {settings.llm_provider === "ollama" && (
+              <Field label="Ollama Endpoint" value={settings.ollama_endpoint}
+                onChange={(v) => update({ ollama_endpoint: v })}
+                placeholder="http://localhost:11434" />
+            )}
 
-          {settings.llm_provider === "lmstudio" && (
-            <>
-              <Field label="LM Studio Endpoint" value={settings.lmstudio_endpoint}
-                onChange={(v) => update({ lmstudio_endpoint: v })}
-                placeholder="http://localhost:1234/v1" />
-              <Field label="LM Studio Model" value={settings.lmstudio_model}
-                onChange={(v) => update({ lmstudio_model: v })}
-                placeholder="e.g. llama-3.1-8b-instruct" />
-            </>
-          )}
+            {settings.llm_provider === "lmstudio" && (
+              <>
+                <Field label="LM Studio Endpoint" value={settings.lmstudio_endpoint}
+                  onChange={(v) => update({ lmstudio_endpoint: v })}
+                  placeholder="http://localhost:1234/v1" />
+                <Field label="LM Studio Model" value={settings.lmstudio_model}
+                  onChange={(v) => update({ lmstudio_model: v })}
+                  placeholder="e.g. llama-3.1-8b-instruct" />
+              </>
+            )}
 
-          {settings.llm_provider === "custom" && (
-            <>
-              <Field label="Custom Endpoint" value={settings.custom_llm_endpoint}
-                onChange={(v) => update({ custom_llm_endpoint: v })}
-                placeholder="http://localhost:8080/v1" />
-              <Field label="API Key" value={settings.custom_llm_api_key}
-                onChange={(v) => update({ custom_llm_api_key: v })}
-                placeholder="any string" type="password" />
-              <Field label="Model Name" value={settings.custom_llm_model}
-                onChange={(v) => update({ custom_llm_model: v })}
-                placeholder="e.g. your-model-name" />
-            </>
-          )}
+            {settings.llm_provider === "custom" && (
+              <>
+                <Field label="Custom Endpoint" value={settings.custom_llm_endpoint}
+                  onChange={(v) => update({ custom_llm_endpoint: v })}
+                  placeholder="http://localhost:8080/v1" />
+                <Field label="API Key" value={settings.custom_llm_api_key}
+                  onChange={(v) => update({ custom_llm_api_key: v })}
+                  placeholder="any string" type="password" />
+                <Field label="Model Name" value={settings.custom_llm_model}
+                  onChange={(v) => update({ custom_llm_model: v })}
+                  placeholder="e.g. your-model-name" />
+              </>
+            )}
+          </div>
         </div>
       </Card>
 
-      {/* Search APIs */}
-      <Card className="p-6">
-        <h3 className="font-display mb-4 font-bold">Search APIs (Stage 1)</h3>
-        <div className="space-y-4">
-          <Field label="Tavily API Key" value={settings.tavily_api_key}
-            onChange={(v) => update({ tavily_api_key: v })}
-            placeholder="tvly-dev-..." type="password" />
-          <Field label="Brave Search API Key (optional)" value={settings.brave_api_key}
-            onChange={(v) => update({ brave_api_key: v })}
-            placeholder="BSA..." type="password" />
-        </div>
-      </Card>
-
-      {/* Job Board APIs */}
-      <Card className="p-6">
-        <h3 className="font-display mb-4 font-bold">Job Board APIs (Stage 3)</h3>
-        <div className="space-y-4">
-          <Field label="bluedoor.sh API Key" value={settings.bluedoor_api_key}
-            onChange={(v) => update({ bluedoor_api_key: v })}
-            placeholder="jobs_live_..." type="password" />
-          <p className="text-xs text-muted-foreground">
-            Get a free key at{" "}
-            <a
-              href="https://bluedoor.sh/apis/job-postings"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="text-blue underline underline-offset-2 hover:text-blue/80"
-            >
-              bluedoor.sh/apis/job-postings
-            </a>{" "}
-            (100 req/s free tier)
-          </p>
-        </div>
-      </Card>
-
-      {/* OAuth */}
-      <UserAuthCard />
-
-      {/* Primary Resume Upload */}
-      <ResumeUploadCard />
-
+      {/* Search & Job Board APIs */}
+      <div className="grid gap-6 md:grid-cols-2">
+        <Card className="p-6">
+          <h3 className="font-display mb-6 font-bold text-xl text-ink">Search API</h3>
+          <div className="space-y-4">
+            <Field label="Tavily API Key" value={settings.tavily_api_key}
+              onChange={(v) => update({ tavily_api_key: v })}
+              placeholder="tvly-dev-..." type="password" />
+            <Field label="Brave Search API Key" value={settings.brave_api_key}
+              onChange={(v) => update({ brave_api_key: v })}
+              placeholder="BSA..." type="password" />
+          </div>
+        </Card>
+        <Card className="p-6">
+          <h3 className="font-display mb-6 font-bold text-xl text-ink">Job Board API</h3>
+          <div className="space-y-4">
+            <Field label="bluedoor.sh API Key" value={settings.bluedoor_api_key}
+              onChange={(v) => update({ bluedoor_api_key: v })}
+              placeholder="jobs_live_..." type="password" />
+          </div>
+        </Card>
+      </div>
 
       {/* Actions */}
-      <Card className="p-6">
-        <div className="flex gap-3">
-          <button
-            onClick={handleSave}
-            className="inline-flex items-center gap-2 rounded-lg border border-blue-deep/30 bg-blue px-4 py-2 text-sm font-semibold text-white shadow-sm transition-all duration-150 hover:bg-blue-deep active:scale-95"
-          >
-            {saved ? <CheckCircle2 className="h-4 w-4" /> : <Save className="h-4 w-4" />}
-            {saved ? "Saved!" : "Save Settings"}
-          </button>
-          <button
-            onClick={reset}
-            className="inline-flex items-center gap-2 rounded-lg border border-border bg-card px-4 py-2 text-sm font-semibold text-foreground shadow-sm transition-all duration-150 hover:bg-beige-deep active:scale-95"
-          >
-            <RotateCcw className="h-4 w-4" />
-            Reset to Defaults
-          </button>
-        </div>
-      </Card>
+      <div className="flex items-center gap-3 pt-6 border-t border-ink/10">
+        <button
+          onClick={handleSave}
+          className="inline-flex items-center gap-2 rounded-lg border-2 border-ink bg-blue px-6 py-2.5 font-bold text-white shadow-hard hover:shadow-hard-lg hover:-translate-y-0.5 active:translate-y-0.5 active:shadow-hard-none transition-all"
+        >
+          {saved ? <CheckCircle2 className="h-5 w-5" /> : <Save className="h-5 w-5" />}
+          {saved ? "Saved Configuration" : "Save Changes"}
+        </button>
+        <button
+          onClick={reset}
+          className="inline-flex items-center gap-2 rounded-lg border-2 border-ink bg-card px-6 py-2.5 font-bold text-ink hover:bg-beige-deep shadow-hard hover:shadow-hard active:translate-y-0.5 transition-all"
+        >
+          <RotateCcw className="h-5 w-5" />
+          Reset
+        </button>
+      </div>
     </div>
   );
 }
