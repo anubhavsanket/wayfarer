@@ -30,9 +30,9 @@ export function ScoreBar({
   // Pick a bar colour based on score
   const barColor =
     pct >= 70
-      ? "bg-blue"
+      ? "bg-cyan"
       : pct >= 40
-        ? "bg-cyan"
+        ? "bg-blue"
         : "bg-destructive";
 
   useEffect(() => {
@@ -62,10 +62,10 @@ export function ScoreBar({
           {suffix ? `${value}${suffix}` : value}
         </span>
       </div>
-      <div className="relative h-3 w-full overflow-hidden rounded-sm border-2 border-ink bg-beige-deep">
+      <div className="relative h-2.5 w-full overflow-hidden rounded-full border border-border bg-beige-deep">
         <div
           ref={barRef}
-          className={cn("absolute inset-y-0 left-0 origin-left rounded-sm", barColor)}
+          className={cn("absolute inset-y-0 left-0 origin-left rounded-full", barColor)}
           style={{ transform: "scaleX(0)" }}
         />
       </div>

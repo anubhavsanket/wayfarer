@@ -58,8 +58,24 @@ export const api = {
   },
 
   // Stage 3 — Job matching
-  jobsMatch: (resumeId: string, limit = 20, test = false, fresherOnly = false) =>
-    request<JobMatchResponse>(
-      `/api/v1/jobs/match?resume_id=${resumeId}&limit=${limit}${test ? "&test=true" : ""}${fresherOnly ? "&fresher_only=true" : ""}`
-    ),
+  jobsMatch: (
+    resumeId: string,
+    limit = 20,
+    test = false,
+    fresherOnly = false,
+    locationMode = "specific_city",
+    cities = "",
+    remoteOk = false
+  ) => {
+    const params = new URLSearchParams({
+      resume_id: resumeId,
+      limit: String(limit),
+      location_mode: locationMode,
+    });
+    if (test) params.append("test", "true");
+    if (fresherOnly) params.append("fresher_only", "true");
+    if (cities) params.append("cities", cities);
+    if (remoteOk) params.append("remote_ok", "true");
+    return request<JobMatchResponse>(`/api/v1/jobs/match?${params.toString()}`);
+  },
 };

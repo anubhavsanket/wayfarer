@@ -54,7 +54,7 @@ export default function SearchPage() {
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             placeholder="Ask anything — e.g. top GenAI roles in Bengaluru..."
-            className="flex-1 rounded-md border-2 border-ink bg-cream px-4 py-3 text-sm font-mono placeholder:text-ink/40 focus:outline-none focus:ring-2 focus:ring-cyan focus:ring-offset-2 focus:ring-offset-card"
+            className="flex-1 rounded-lg border border-border bg-card px-4 py-3 text-sm font-mono placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-cyan focus:ring-offset-2 focus:ring-offset-card"
           />
           <Button type="submit" disabled={mutation.isPending} size="lg">
             <SearchIcon className="mr-2 h-4 w-4" />
@@ -72,7 +72,7 @@ export default function SearchPage() {
               <button
                 key={q}
                 onClick={() => handleSubmit(q)}
-                className="rounded-md border-2 border-ink/30 bg-beige-deep px-2.5 py-1 text-xs font-medium text-ink/70 transition-colors hover:border-ink hover:bg-blue-pale hover:text-ink"
+                className="rounded-lg border border-border bg-beige-deep px-3 py-1 text-xs font-medium text-foreground transition-colors hover:border-cyan hover:bg-cyan-pale/30"
               >
                 {q}
               </button>

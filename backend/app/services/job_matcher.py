@@ -49,20 +49,73 @@ TOP_K_EMBEDDING_SURVIVORS = settings.JOBS_TOP_K_EMBEDDING_SURVIVORS
 # Posting discovery + dedup
 # ---------------------------------------------------------------------------
 
-async def _discover_postings() -> list[JobPosting]:
+import re
+
+_ROLE_PATTERNS = [
+    r"\b(machine learning engineer|ml engineer|ai engineer|ai/ml engineer)\b",
+    r"\b(software engineer|software developer|full[- ]stack developer|backend developer|frontend developer)\b",
+    r"\b(data scientist|data engineer|devops engineer|cloud engineer|systems engineer)\b",
+]
+
+
+def _extract_resume_search_keywords(parsed: Any) -> str:
+    """Extract candidate target role or top technical keywords from parsed resume."""
+    text = getattr(parsed, "raw_text", "") or ""
+    text_lower = text[:1000].lower()
+
+    for pattern in _ROLE_PATTERNS:
+        match = re.search(pattern, text_lower)
+        if match:
+            found = match.group(1).title()
+            if "Ai/Ml" in found:
+                return "AI Machine Learning Engineer"
+            if "Ml" in found:
+                return "Machine Learning Engineer"
+            if "Ai" in found:
+                return "AI Engineer"
+            return found
+
+    # Fallback to skills section if present
+    sections = getattr(parsed, "sections", {}) or {}
+    skills_lines = sections.get("skills", [])
+    skills_text = " ".join(skills_lines)
+    if skills_text:
+        tech_kw = []
+        for kw in ["Python", "Java", "React", "TypeScript", "C++", "PyTorch", "Node", "SQL"]:
+            if re.search(rf"\b{kw}\b", skills_text, re.IGNORECASE):
+                tech_kw.append(kw)
+        if tech_kw:
+            return f"{tech_kw[0]} Developer"
+
+    return "Software Engineer"
+
+
+def _interleave_postings(board_results: list[list[JobPosting]]) -> list[JobPosting]:
+    """Interleave postings from multiple boards so no single board dominates."""
+    out: list[JobPosting] = []
+    max_len = max((len(r) for r in board_results), default=0)
+    for i in range(max_len):
+        for result_list in board_results:
+            if i < len(result_list):
+                out.append(result_list[i])
+    return out
+
+
+async def _discover_postings(keywords: str = "", location: str = "") -> list[JobPosting]:
     """Fetch postings from every enabled board in the registry."""
     registry = load_registry("config/job_boards.yaml")
     enabled = [b for b in registry.job_boards if b.enabled]
     connector = JobBoardConnector()
     try:
-        postings: list[JobPosting] = []
+        board_results: list[list[JobPosting]] = []
         for board in enabled:
             try:
-                board_postings = await connector.fetch_all(board)
-                postings.extend(board_postings)
+                board_postings = await connector.fetch_all(board, keywords=keywords, location=location)
+                board_results.append(board_postings)
                 logger.info("Fetched %d postings from %s", len(board_postings), board.name)
             except Exception as exc:
                 logger.warning("Board %s fetch failed: %s", board.name, exc)
+        postings = _interleave_postings(board_results)
         return postings
     finally:
         await connector.aclose()
@@ -131,14 +184,16 @@ async def _compute_semantic_scores(
     resume_vec: list[float],
     postings: list[JobPosting],
 ) -> list[tuple[JobPosting, float]]:
-    """Cosine similarity of each posting's JD against the resume embedding."""
+    """Cosine similarity of each posting's JD (or title+company fallback) against resume embedding."""
     scored: list[tuple[JobPosting, float]] = []
     for posting in postings:
-        if not posting.description:
+        desc = (posting.description or "").strip()
+        text_to_embed = desc if len(desc) > 20 else f"{posting.title} at {posting.company}"
+        if not text_to_embed.strip():
             scored.append((posting, 0.0))
             continue
         try:
-            jd_vec = await router.embed(posting.description)
+            jd_vec = await router.embed(text_to_embed)
             score = cosine_similarity(resume_vec, jd_vec)
         except Exception as exc:
             logger.warning("JD embed failed for %s: %s", posting.id, exc)
@@ -422,8 +477,12 @@ async def match_jobs(
     if not parsed.bullets:
         raise ValueError("Resume has no parseable bullets — cannot match.")
 
+    # Extract candidate keywords from resume
+    search_keywords = _extract_resume_search_keywords(parsed)
+    location_query = ", ".join(pref.cities) if pref and pref.cities else ""
+
     # 1. Discovery + dedup + normalise + drop stale (zero-token)
-    postings = _dedupe_postings(await _discover_postings())
+    postings = _dedupe_postings(await _discover_postings(keywords=search_keywords, location=location_query))
     if not postings:
         return JobMatchResponse(matches=[], aggregate_gaps=[])
     postings = _normalise_postings(postings)

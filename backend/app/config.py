@@ -18,7 +18,7 @@ class Settings(BaseSettings):
     #                  (set LMSTUDIO_ENDPOINT + LMSTUDIO_MODEL)
     #   custom     → Any OpenAI-compatible endpoint
     #                  (set CUSTOM_LLM_ENDPOINT + CUSTOM_LLM_API_KEY + CUSTOM_LLM_MODEL)
-    LLM_PROVIDER: Literal["nvidia", "openrouter", "ollama", "lmstudio", "custom"] = "nvidia"
+    LLM_PROVIDER: Literal["nvidia", "openrouter", "ollama", "lmstudio", "custom"] = "ollama"
 
     # NVIDIA NIM
     NVIDIA_NIM_ENDPOINT: str = "https://integrate.api.nvidia.com/v1"
@@ -53,14 +53,17 @@ class Settings(BaseSettings):
     # ── Model selection ─────────────────────────────────────────────────
     # Both tiers use the same model per provider to keep things simple.
     # For LM Studio / custom: the LMSTUDIO_MODEL / CUSTOM_LLM_MODEL is used.
+    # NOTE: NVIDIA's meta/llama-3.1-8b-instruct + llama-3.3-70b hit EOL on
+    # 2026-08-26 (HTTP 410). deepseek-v4-flash is a currently-listed catalog
+    # model; swap to whatever your key is entitled to (see /v1/models).
     LLM_MODELS: dict = {
         "simple": {
-            "nvidia": "meta/llama-3.1-8b-instruct",
+            "nvidia": "deepseek-ai/deepseek-v4-flash-0731",
             "openrouter": "meta-llama/llama-3.1-8b-instruct",
             "ollama": "llama3.2:3b",
         },
         "complex": {
-            "nvidia": "meta/llama-3.1-8b-instruct",
+            "nvidia": "deepseek-ai/deepseek-v4-flash-0731",
             "openrouter": "meta-llama/llama-3.1-8b-instruct",
             "ollama": "llama3.2:3b",
         },

@@ -63,6 +63,7 @@ class JobBoardEntry(BaseModel):
     auth: Literal["none", "api_key"] = "none"
     api_key_env: str | None = None
     rate_limit_per_min: int = 60
+    query_param: str = "q"
     field_mapping: FieldMapping = Field(default_factory=FieldMapping)
     css_selectors: CSSSelectors = Field(default_factory=CSSSelectors)
     pagination: PaginationConfig = Field(default_factory=PaginationConfig)
@@ -176,7 +177,8 @@ class JobBoardConnector:
         for page_num in range(max_pages):
             params: dict[str, Any] = dict(board.extra_params)
             if keywords:
-                params["q"] = keywords
+                query_key = getattr(board, "query_param", "q") or "q"
+                params[query_key] = keywords
             if location:
                 params["location"] = location
 

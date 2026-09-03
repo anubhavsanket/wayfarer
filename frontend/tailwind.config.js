@@ -59,9 +59,9 @@ export default {
         },
       },
       fontFamily: {
-        display: ["Petrona", "Georgia", "serif"],
-        sans: ["'Source Sans 3'", "system-ui", "sans-serif"],
-        mono: ["'Azeret Mono'", "ui-monospace", "monospace"],
+        display: ["Petrona", "'Space Grotesk'", "Georgia", "serif"],
+        sans: ["Inter", "'Source Sans 3'", "system-ui", "sans-serif"],
+        mono: ["'JetBrains Mono'", "'Azeret Mono'", "ui-monospace", "monospace"],
       },
       boxShadow: {
         hard: "4px 4px 0 0 var(--shadow-ink)",
@@ -69,7 +69,8 @@ export default {
         "hard-lg": "6px 6px 0 0 var(--shadow-ink)",
         "hard-blue": "4px 4px 0 0 var(--blue-deep)",
         "hard-cyan": "4px 4px 0 0 var(--cyan)",
-        "hard-none": "0 0 0 0 var(--shadow-ink)",
+        "hard-none": "0 0 0 0 transparent",
+        "sm": "0 1px 2px 0 rgb(0 0 0 / 0.05)",
       },
       borderRadius: {
         lg: "var(--radius)",

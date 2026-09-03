@@ -56,7 +56,8 @@ export default function ResumeCheckPage() {
 
   const handleCheck = () => {
     if (!jdText.trim()) return;
-    if (useVariant && file) {
+    if (file) {
+      // Picked a file directly (no stored resume) or via "Use a different resume"
       checkMutation.mutate({ file, jd: jdText.trim() });
     } else if (hasStoredResume) {
       checkMutation.mutate({ file: null, jd: jdText.trim() });
@@ -98,10 +99,10 @@ export default function ResumeCheckPage() {
         <div className="mb-4 space-y-3">
           {/* Primary resume display */}
           {hasStoredResume && !useVariant && (
-            <div className="flex items-center gap-2 rounded-md bg-beige-deep p-3 text-sm border-2 border-ink/20">
+            <div className="flex items-center gap-2 rounded-lg bg-blue-pale p-3 text-sm border border-blue/20">
               <FileText className="h-4 w-4 shrink-0 text-blue" />
               <span className="font-medium truncate">{storedFileName || "Resume uploaded"}</span>
-              <span className="text-xs text-muted-foreground">({storedResumeId})</span>
+              <span className="text-xs font-mono text-muted-foreground">({storedResumeId})</span>
               <button
                 onClick={() => setUseVariant(true)}
                 className="ml-auto text-xs font-semibold text-blue underline"
@@ -114,7 +115,7 @@ export default function ResumeCheckPage() {
           {/* Variant upload */}
           {(useVariant || !hasStoredResume) && (
             <div className="space-y-2">
-              <label className="flex cursor-pointer items-center gap-2 rounded-md border-2 border-dashed border-ink bg-cream p-4 text-sm text-muted-foreground transition-colors hover:bg-beige-deep">
+              <label className="flex cursor-pointer items-center gap-2 rounded-lg border border-dashed border-border bg-beige-deep p-4 text-sm text-muted-foreground transition-colors hover:bg-border">
                 <Upload className="h-4 w-4" />
                 {file ? file.name : "Upload resume (PDF/DOCX)"}
                 <input
@@ -140,7 +141,7 @@ export default function ResumeCheckPage() {
             onChange={(e) => setJdText(e.target.value)}
             rows={5}
             placeholder="Paste job description here..."
-            className="w-full resize-y rounded-md border-2 border-ink bg-cream px-4 py-2.5 text-sm placeholder:text-ink/40 focus:outline-none focus:ring-2 focus:ring-cyan focus:ring-offset-2 focus:ring-offset-card"
+            className="w-full resize-y rounded-lg border border-border bg-card px-4 py-2.5 text-sm placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-cyan focus:ring-offset-2 focus:ring-offset-card"
           />
           {jdText.trim().length > 0 && (
             <p className="text-right text-[10px] font-mono text-muted-foreground">
@@ -229,22 +230,22 @@ export default function ResumeCheckPage() {
                     )}
 
                     {gap.original_text && gap.suggested_text ? (
-                      <div className="mt-2 ml-4 grid grid-cols-2 gap-2 rounded-md border-2 border-ink bg-cream p-3 text-xs">
-                        <div>
-                          <span className="mb-1 block font-semibold text-destructive">Original</span>
+                      <div className="mt-2 ml-4 grid grid-cols-2 gap-3 rounded-lg border border-border bg-beige-deep/50 p-3 text-xs">
+                        <div className="rounded border border-destructive/20 bg-destructive/5 p-2">
+                          <span className="mb-1 block font-semibold font-mono text-[10px] text-destructive uppercase">Original</span>
                           <p className="whitespace-pre-wrap text-muted-foreground line-through">
                             {gap.original_text}
                           </p>
                         </div>
-                        <div>
-                          <span className="mb-1 block font-semibold text-blue">Suggested</span>
-                          <p className="whitespace-pre-wrap text-blue">
+                        <div className="rounded border border-cyan/30 bg-cyan-pale/20 p-2">
+                          <span className="mb-1 block font-semibold font-mono text-[10px] text-cyan uppercase">Suggested</span>
+                          <p className="whitespace-pre-wrap text-foreground font-medium">
                             {gap.suggested_text}
                           </p>
                         </div>
                       </div>
                     ) : gap.suggested_text ? (
-                      <p className="mt-1 whitespace-pre-wrap pl-4 text-xs italic text-blue">
+                      <p className="mt-1 whitespace-pre-wrap pl-4 text-xs italic text-cyan">
                         → {gap.suggested_text}
                       </p>
                     ) : null}

@@ -1,0 +1,79 @@
+/* 
+ * Backup of Legacy Neo-Brutalist Palette & Theme Rules
+ * Saved on 2026-09-02 so it can be restored at any time.
+ */
+
+:root {
+  /* Warm beige page, cream cards, ink text/borders, blue primary, cyan highlight */
+  --background: 33 100% 88%;
+  --foreground: 24 10% 10%;
+  --card: 40 100% 97%;
+  --card-foreground: 24 10% 10%;
+  --popover: 40 100% 97%;
+  --popover-foreground: 24 10% 10%;
+  --primary: 227 82% 49%;
+  --primary-foreground: 0 0% 100%;
+  --secondary: 33 100% 75%;
+  --secondary-foreground: 24 10% 10%;
+  --muted: 33 100% 75%;
+  --muted-foreground: 33 5% 32%;
+  --accent: 197 100% 94%;
+  --accent-foreground: 24 10% 10%;
+  --destructive: 347 77% 50%;
+  --destructive-foreground: 0 0% 100%;
+  --border: 24 10% 10%;
+  --input: 24 10% 10%;
+  --ring: 196 90% 61%;
+  --radius: 0.5rem;
+
+  /* Neo-brutalist raw palette (light) */
+  --beige: #ffe4c4;
+  --beige-deep: #f3c48b;
+  --cream: #fffaf0;
+  --ink: #1c1917;
+  --ink-soft: #57534e;
+  --blue: #1743e3;
+  --blue-deep: #1029a8;
+  --blue-pale: #e7ecff;
+  --cyan: #44c7f5;
+  --cyan-pale: #e0f6ff;
+  --shadow-ink: #1c1917;
+  --texture-dot: #c49464;
+}
+
+.dark {
+  /* GitHub-inspired — deep charcoal bg, sky blue buttons, deep blue accent, subtle borders */
+  --background: 216 28% 7%;
+  --foreground: 0 0% 100%;
+  --card: 215 22% 23%;
+  --card-foreground: 0 0% 100%;
+  --popover: 215 22% 23%;
+  --popover-foreground: 0 0% 100%;
+  --primary: 227 82% 49%;
+  --primary-foreground: 0 0% 5%;
+  --secondary: 227 82% 49%;
+  --secondary-foreground: 0 0% 100%;
+  --muted: 215 15% 15%;
+  --muted-foreground: 215 20% 65%;
+  --accent: 215 15% 15%;
+  --accent-foreground: 0 0% 100%;
+  --destructive: 0 91% 71%;
+  --destructive-foreground: 0 0% 100%;
+  --border: 0 0% 0%;
+  --input: 0 0% 0%;
+  --ring: 196 90% 61%;
+
+  /* Neo-brutalist raw palette (GitHub) */
+  --beige: #0d1117;
+  --beige-deep: #21262d;
+  --cream: #2e3948;
+  --ink: #000000;
+  --ink-soft: #94a3b8;
+  --blue: #1743e3;
+  --blue-deep: #44c7f5;
+  --blue-pale: #0d2d44;
+  --cyan: #44c7f5;
+  --cyan-pale: #0c1e4a;
+  --shadow-ink: rgba(68, 199, 245, 0.12);
+  --texture-dot: rgba(68, 199, 245, 0.04);
+}

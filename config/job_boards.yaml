@@ -10,6 +10,7 @@ job_boards:
     auth: api_key
     api_key_env: "BLUEDOOR_API_KEY"
     rate_limit_per_min: 100  # free tier: 100 req/s, burst 500
+    query_param: "q"
     field_mapping:
       id: "$.job_id"
       title: "$.title"
@@ -29,6 +30,7 @@ job_boards:
     base_url: "https://www.linkedin.com/jobs-guest/jobs/api/seeMoreJobPostings/search"
     auth: none
     rate_limit_per_min: 20
+    query_param: "keywords"
     extra_headers:
       User-Agent: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36"
       Accept: "text/html"

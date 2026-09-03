@@ -134,7 +134,7 @@ function FilterPanel({
   ];
 
   return (
-    <div className="mt-4 space-y-4 rounded-lg border-2 border-ink bg-card p-4 shadow-hard-sm">
+    <div className="mt-4 space-y-4 rounded-xl border border-border bg-card p-4 shadow-sm">
       {/* Location */}
       <div className="space-y-1.5">
         <label className="text-sm font-semibold">Location</label>
@@ -142,7 +142,7 @@ function FilterPanel({
           <select
             value={locationMode}
             onChange={(e) => setLocationMode(e.target.value)}
-            className="rounded-md border-2 border-ink bg-cream px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-cyan"
+            className="rounded-lg border border-border bg-background px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-cyan"
           >
             <option value="specific_city">Specific city</option>
             <option value="remote_only">Remote only</option>
@@ -155,7 +155,7 @@ function FilterPanel({
               value={cityFilter}
               onChange={(e) => setCityFilter(e.target.value)}
               placeholder="e.g. Bengaluru"
-              className="flex-1 rounded-md border-2 border-ink bg-cream px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-cyan"
+              className="flex-1 rounded-lg border border-border bg-background px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-cyan"
             />
           )}
         </div>
@@ -300,11 +300,46 @@ export default function JobMatchPage() {
 
   const { data, isLoading, error, refetch } = useQuery({
     queryKey: ["jobs", resumeId, testMode, fresherOnly, appliedFilters],
-    queryFn: () => api.jobsMatch(resumeId, 50, testMode, fresherOnly),
+    queryFn: () =>
+      api.jobsMatch(
+        resumeId,
+        50,
+        testMode,
+        fresherOnly,
+        appliedFilters.locationMode,
+        appliedFilters.cityFilter,
+        appliedFilters.remoteOk
+      ),
     enabled: hasResume,
   });
 
-  const totalResults = (data?.matches?.length ?? 0) + (data?.unclear_matches?.length ?? 0);
+  const matches = (data?.matches ?? []).filter((job: JobMatch) => {
+    if (appliedFilters.minScore > 0 && job.match_score * 100 < appliedFilters.minScore) {
+      return false;
+    }
+    if (appliedFilters.sourceFilter) {
+      const active = appliedFilters.sourceFilter.split(",").map((s) => s.trim().toLowerCase());
+      if (active.length > 0 && !active.includes(job.source.toLowerCase())) {
+        return false;
+      }
+    }
+    return true;
+  });
+
+  const unclearMatches = (data?.unclear_matches ?? []).filter((job: JobMatch) => {
+    if (appliedFilters.minScore > 0 && job.match_score * 100 < appliedFilters.minScore) {
+      return false;
+    }
+    if (appliedFilters.sourceFilter) {
+      const active = appliedFilters.sourceFilter.split(",").map((s) => s.trim().toLowerCase());
+      if (active.length > 0 && !active.includes(job.source.toLowerCase())) {
+        return false;
+      }
+    }
+    return true;
+  });
+
+  const totalResults = matches.length + unclearMatches.length;
 
   return (
     <div className="space-y-4">
@@ -318,11 +353,11 @@ export default function JobMatchPage() {
         </p>
 
         {hasResume ? (
-          <div className="mb-3 flex flex-wrap items-center gap-3 rounded-md bg-beige-deep p-3 text-sm border-2 border-ink/20">
+          <div className="mb-3 flex flex-wrap items-center gap-3 rounded-lg bg-blue-pale p-3 text-sm border border-blue/20">
             <div className="flex items-center gap-2 min-w-0">
               <Briefcase className="h-4 w-4 shrink-0 text-blue" />
               <span className="font-medium truncate">{resumeFileName || "Resume loaded"}</span>
-              <span className="text-xs text-muted-foreground">
+              <span className="text-xs font-mono text-muted-foreground">
                 ({resumeId})
               </span>
             </div>
@@ -335,7 +370,7 @@ export default function JobMatchPage() {
             </Button>
           </div>
         ) : (
-          <div className="rounded-md border-2 border-ink bg-cream p-4 text-sm text-muted-foreground">
+          <div className="rounded-lg border border-border bg-beige-deep p-4 text-sm text-muted-foreground">
             <span className="font-semibold text-foreground">No resume uploaded yet.</span>{" "}
             Go to <strong>Settings</strong> → Primary Resume to upload your resume, then come back here to find matches.
           </div>
@@ -412,21 +447,21 @@ export default function JobMatchPage() {
             </Card>
           )}
 
-          {data.matches.length > 0 && (
+          {matches.length > 0 && (
             <Stagger className="space-y-3">
               <p className="mb-1 text-sm font-semibold text-muted-foreground">
-                {data.matches.length} confirmed match{data.matches.length !== 1 ? "es" : ""}
+                {matches.length} confirmed match{matches.length !== 1 ? "es" : ""}
                 {fresherOnly ? " (fresher/junior only)" : ""}
-                {minScore > 0 ? ` (≥${minScore}% match)` : ""}
+                {appliedFilters.minScore > 0 ? ` (≥${appliedFilters.minScore}% match)` : ""}
               </p>
-              {data.matches.map((job: JobMatch) => (
+              {matches.map((job: JobMatch) => (
                 <JobCard key={job.job_id} job={job} />
               ))}
             </Stagger>
           )}
 
           {/* Unclear matches */}
-          {data.unclear_matches && data.unclear_matches.length > 0 && (
+          {unclearMatches.length > 0 && (
             <div className="mt-4">
               <button
                 onClick={() => setShowUnclear(!showUnclear)}
@@ -435,17 +470,16 @@ export default function JobMatchPage() {
                 {showUnclear
                   ? <ChevronUp className="h-4 w-4" />
                   : <ChevronDown className="h-4 w-4" />}
-                {data.unclear_matches.length} unclear match{data.unclear_matches.length !== 1 ? "es" : ""}
+                {unclearMatches.length} unclear match{unclearMatches.length !== 1 ? "es" : ""}
                 <span className="text-xs font-normal">(experience level couldn't be determined)</span>
               </button>
               {showUnclear && (
                 <Stagger className="mt-3 space-y-3">
-                  {data.unclear_matches.map((job: JobMatch) => (
+                  {unclearMatches.map((job: JobMatch) => (
                     <JobCard key={job.job_id} job={job} />
                   ))}
                 </Stagger>
               )}
-
             </div>
           )}
 

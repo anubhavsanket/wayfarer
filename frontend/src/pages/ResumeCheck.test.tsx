@@ -121,6 +121,31 @@ describe("ResumeCheckPage — stored-resume flow", () => {
     expect(screen.getByText(/Upload resume \(PDF\/DOCX\)/)).toBeInTheDocument();
   });
 
+  it("handles fresh file upload when no resume is stored in localStorage", async () => {
+    mockSuccess();
+    renderPage();
+
+    const file = new File(["dummy"], "first_resume.pdf", { type: "application/pdf" });
+    const fileInput = document.querySelector('input[type="file"]') as HTMLInputElement;
+    fireEvent.change(fileInput, { target: { files: [file] } });
+
+    fireEvent.change(screen.getByPlaceholderText(/Paste job description/), {
+      target: { value: "Fullstack Developer with Node" },
+    });
+
+    const button = screen.getByRole("button", { name: /Check Resume/ });
+    expect(button).not.toBeDisabled();
+    fireEvent.click(button);
+
+    await waitFor(() => {
+      expect(mockedResumeCheck).toHaveBeenCalledTimes(1);
+    });
+    expect(mockedResumeCheck).toHaveBeenCalledWith(
+      "Fullstack Developer with Node",
+      file
+    );
+  });
+
   it("clears a stale resume_id from localStorage on a 404", async () => {
     localStorage.setItem("resume_id", "stale-id");
     localStorage.setItem("resume_filename", "old.doc");

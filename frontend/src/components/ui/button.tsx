@@ -9,6 +9,7 @@ const buttonVariants = cva(
     "font-sans text-sm font-semibold",
     "border-2 border-ink select-none",
     "transition-all duration-150 ease-out",
+    "dark:border dark:border-border dark:rounded-lg dark:font-medium",
     "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan focus-visible:ring-offset-2 focus-visible:ring-offset-background",
     "disabled:pointer-events-none disabled:opacity-50",
   ].join(" "),
@@ -16,15 +17,15 @@ const buttonVariants = cva(
     variants: {
       variant: {
         default:
-          "bg-blue text-white shadow-hard-blue hover:-translate-y-0.5 hover:shadow-hard-lg active:translate-y-0.5 active:shadow-hard-none",
+          "bg-blue text-white shadow-hard-blue hover:-translate-y-0.5 hover:shadow-hard-lg active:translate-y-0.5 active:shadow-hard-none dark:shadow-sm dark:hover:bg-blue-deep dark:active:scale-[0.98] dark:hover:translate-y-0",
         outline:
-          "bg-cream text-ink shadow-hard-sm hover:-translate-y-0.5 hover:shadow-hard active:translate-y-0.5 active:shadow-hard-none",
+          "bg-cream text-ink shadow-hard-sm hover:-translate-y-0.5 hover:shadow-hard active:translate-y-0.5 active:shadow-hard-none dark:bg-card dark:text-foreground dark:border-border dark:shadow-sm dark:hover:bg-beige-deep dark:active:scale-[0.98] dark:hover:translate-y-0",
         destructive:
-          "bg-destructive text-destructive-foreground shadow-hard-sm hover:-translate-y-0.5 hover:shadow-hard active:translate-y-0.5 active:shadow-hard-none",
+          "bg-destructive text-destructive-foreground shadow-hard-sm hover:-translate-y-0.5 hover:shadow-hard active:translate-y-0.5 active:shadow-hard-none dark:shadow-sm dark:hover:bg-destructive/90 dark:active:scale-[0.98] dark:hover:translate-y-0",
         secondary:
-          "bg-beige-deep text-ink shadow-hard-sm hover:-translate-y-0.5 hover:shadow-hard active:translate-y-0.5 active:shadow-hard-none",
+          "bg-beige-deep text-ink shadow-hard-sm hover:-translate-y-0.5 hover:shadow-hard active:translate-y-0.5 active:shadow-hard-none dark:bg-beige-deep dark:text-foreground dark:border-border dark:shadow-sm dark:hover:bg-border dark:active:scale-[0.98] dark:hover:translate-y-0",
         ghost:
-          "border-transparent bg-transparent text-foreground hover:bg-accent hover:text-accent-foreground hover:shadow-none",
+          "border-transparent bg-transparent text-foreground hover:bg-accent hover:text-accent-foreground hover:shadow-none dark:hover:bg-beige-deep",
         link: "border-transparent bg-transparent text-blue underline underline-offset-4 hover:text-blue/80",
       },
       size: {

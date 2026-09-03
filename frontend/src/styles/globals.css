@@ -4,7 +4,7 @@
 
 @layer base {
   :root {
-    /* Warm beige page, cream cards, ink text/borders, blue primary, cyan highlight */
+    /* Neo-brutalist raw palette (light) - RESTORED */
     --background: 33 100% 88%;
     --foreground: 24 10% 10%;
     --card: 40 100% 97%;
@@ -42,44 +42,44 @@
   }
 
   .dark {
-    /* GitHub-inspired — deep charcoal bg, sky blue buttons, deep blue accent, subtle borders */
-    --background: 216 28% 7%;
-    --foreground: 0 0% 100%;
-    --card: 215 22% 23%;
-    --card-foreground: 0 0% 100%;
-    --popover: 215 22% 23%;
-    --popover-foreground: 0 0% 100%;
-    --primary: 227 82% 49%;
-    --primary-foreground: 0 0% 5%;
-    --secondary: 227 82% 49%;
-    --secondary-foreground: 0 0% 100%;
-    --muted: 215 15% 15%;
+    /* Tactical Command Obsidian palette (dark) */
+    --background: 222 47% 6%;
+    --foreground: 210 40% 98%;
+    --card: 222 41% 12%;
+    --card-foreground: 210 40% 98%;
+    --popover: 222 41% 12%;
+    --popover-foreground: 210 40% 98%;
+    --primary: 217 91% 60%;
+    --primary-foreground: 222 47% 6%;
+    --secondary: 217 19% 18%;
+    --secondary-foreground: 210 40% 98%;
+    --muted: 217 19% 18%;
     --muted-foreground: 215 20% 65%;
-    --accent: 215 15% 15%;
-    --accent-foreground: 0 0% 100%;
-    --destructive: 0 91% 71%;
-    --destructive-foreground: 0 0% 100%;
-    --border: 0 0% 0%;
-    --input: 0 0% 0%;
-    --ring: 196 90% 61%;
+    --accent: 173 80% 40%;
+    --accent-foreground: 210 40% 98%;
+    --destructive: 0 72% 51%;
+    --destructive-foreground: 210 40% 98%;
+    --border: 217 19% 20%;
+    --input: 217 19% 20%;
+    --ring: 173 80% 40%;
 
-    /* Neo-brutalist raw palette (GitHub) */
-    --beige: #0d1117;
-    --beige-deep: #21262d;
-    --cream: #2e3948;
-    --ink: #000000;
+    /* Architectural Field Instrument Tokens (dark) */
+    --beige: #090d16;
+    --beige-deep: #1e293b;
+    --cream: #131b2e;
+    --ink: #f8fafc;
     --ink-soft: #94a3b8;
-    --blue: #1743e3;
-    --blue-deep: #44c7f5;
-    --blue-pale: #0d2d44;
-    --cyan: #44c7f5;
-    --cyan-pale: #0c1e4a;
-    --shadow-ink: rgba(68, 199, 245, 0.12);
-    --texture-dot: rgba(68, 199, 245, 0.04);
+    --blue: #3b82f6;
+    --blue-deep: #60a5fa;
+    --blue-pale: #1e293b;
+    --cyan: #14b8a6;
+    --cyan-pale: #134e4a;
+    --shadow-ink: #1e293b;
+    --texture-dot: #1e293b;
   }
 
   .dark ::placeholder {
-    color: #8b949e;
+    color: #64748b;
   }
 }
 
@@ -92,26 +92,26 @@
     @apply bg-background font-sans text-foreground;
     background-image: radial-gradient(
       circle,
-      var(--texture-dot) 2px,
-      transparent 2px
+      var(--texture-dot) 1.5px,
+      transparent 1.5px
     );
-    background-size: 20px 20px;
+    background-size: 24px 24px;
   }
 
   ::selection {
-    background: var(--cyan);
-    color: var(--ink);
+    background: var(--cyan-pale);
+    color: var(--cyan);
   }
 
   ::-webkit-scrollbar {
-    width: 10px;
-    height: 10px;
+    width: 8px;
+    height: 8px;
   }
   ::-webkit-scrollbar-track {
     background: transparent;
   }
   ::-webkit-scrollbar-thumb {
-    background: var(--ink);
+    background: var(--ink-soft);
     border: 2px solid transparent;
     border-radius: 999px;
     background-clip: padding-box;
@@ -124,21 +124,20 @@
 }
 
 @layer components {
-  /* Decorative sticker badge — rotated, thick border, hard shadow, mono */
+  /* Precision diagnostic badge — clear, high-density monospace label */
   .sticker {
     display: inline-flex;
     align-items: center;
     gap: 0.375rem;
-    border: 2px solid var(--ink);
+    border: 1px solid var(--border);
     border-radius: calc(var(--radius) - 2px);
-    box-shadow: 3px 3px 0 0 var(--shadow-ink);
-    font-family: "Azeret Mono", ui-monospace, monospace;
-    font-size: 0.6875rem;
+    font-family: "'JetBrains Mono'", "Azeret Mono", ui-monospace, monospace;
+    font-size: 0.70rem;
     line-height: 1;
     font-weight: 600;
-    letter-spacing: 0.02em;
+    letter-spacing: 0.03em;
     text-transform: uppercase;
-    padding: 0.3125rem 0.5rem;
+    padding: 0.35rem 0.55rem;
     white-space: nowrap;
   }
 

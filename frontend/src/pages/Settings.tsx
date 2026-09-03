@@ -44,14 +44,14 @@ function ResumeUploadCard() {
       </p>
 
       {storedResumeId && (
-        <div className="mb-4 flex items-center gap-2 rounded-md bg-blue-pale p-3 text-sm border-2 border-ink/20">
+        <div className="mb-4 flex items-center gap-2 rounded-lg bg-blue-pale p-3 text-sm border border-blue/20">
           <CheckCircle2 className="h-4 w-4 shrink-0 text-blue" />
           <span className="font-medium">{storedFileName || "Resume uploaded"}</span>
-          <span className="text-xs text-muted-foreground">({storedResumeId})</span>
+          <span className="text-xs font-mono text-muted-foreground">({storedResumeId})</span>
         </div>
       )}
 
-      <label className="flex cursor-pointer items-center gap-2 rounded-md border-2 border-dashed border-ink bg-cream p-4 text-sm text-muted-foreground transition-colors hover:bg-beige-deep">
+      <label className="flex cursor-pointer items-center gap-2 rounded-lg border border-dashed border-border bg-beige-deep p-4 text-sm text-muted-foreground transition-colors hover:bg-border">
         <Upload className="h-4 w-4" />
         {mutation.isPending
           ? "Uploading..."
@@ -114,13 +114,13 @@ function Field({ label, value, onChange, placeholder, type = "text", required }:
           value={value}
           onChange={(e) => onChange(e.target.value)}
           placeholder={placeholder}
-          className="flex-1 rounded-md border-2 border-ink bg-cream px-3 py-2 text-sm font-mono placeholder:text-ink/40 focus:outline-none focus:ring-2 focus:ring-cyan focus:ring-offset-2 focus:ring-offset-card"
+          className="flex-1 rounded-lg border border-border bg-card px-3 py-2 text-sm font-mono placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-cyan focus:ring-offset-2 focus:ring-offset-card"
         />
         {isPassword && (
           <button
             type="button"
             onClick={() => setShow(!show)}
-            className="flex items-center justify-center rounded-md border-2 border-ink bg-cream px-2 text-muted-foreground shadow-hard-sm transition-all duration-150 hover:-translate-y-0.5 hover:shadow-hard active:translate-y-0.5 active:shadow-hard-none"
+            className="flex items-center justify-center rounded-lg border border-border bg-beige-deep px-3 text-muted-foreground shadow-sm transition-all duration-150 hover:bg-border active:scale-95"
           >
             {show ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
           </button>
@@ -165,7 +165,7 @@ export default function SettingsPage() {
             <select
               value={settings.llm_provider}
               onChange={(e) => update({ llm_provider: e.target.value })}
-              className="w-full rounded-md border-2 border-ink bg-cream px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-cyan"
+              className="w-full rounded-lg border border-border bg-card px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-cyan"
             >
               {PROVIDERS.map((p) => (
                 <option key={p.value} value={p.value}>{p.label}</option>
@@ -271,14 +271,14 @@ export default function SettingsPage() {
         <div className="flex gap-3">
           <button
             onClick={handleSave}
-            className="inline-flex items-center gap-2 rounded-md border-2 border-ink bg-blue px-4 py-2 text-sm font-semibold text-white shadow-hard-blue transition-all duration-150 hover:-translate-y-0.5 hover:shadow-hard-lg active:translate-y-0.5 active:shadow-hard-none"
+            className="inline-flex items-center gap-2 rounded-lg border border-blue-deep/30 bg-blue px-4 py-2 text-sm font-semibold text-white shadow-sm transition-all duration-150 hover:bg-blue-deep active:scale-95"
           >
             {saved ? <CheckCircle2 className="h-4 w-4" /> : <Save className="h-4 w-4" />}
             {saved ? "Saved!" : "Save Settings"}
           </button>
           <button
             onClick={reset}
-            className="inline-flex items-center gap-2 rounded-md border-2 border-ink bg-cream px-4 py-2 text-sm font-semibold text-ink shadow-hard-sm transition-all duration-150 hover:-translate-y-0.5 hover:shadow-hard active:translate-y-0.5 active:shadow-hard-none"
+            className="inline-flex items-center gap-2 rounded-lg border border-border bg-card px-4 py-2 text-sm font-semibold text-foreground shadow-sm transition-all duration-150 hover:bg-beige-deep active:scale-95"
           >
             <RotateCcw className="h-4 w-4" />
             Reset to Defaults

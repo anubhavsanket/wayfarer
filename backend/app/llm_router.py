@@ -110,7 +110,12 @@ class LLMRouter:
         if not resolved_provider:
             candidates = list(settings.PROVIDER_RATE_LIMITS.keys())
         else:
-            candidates = [resolved_provider]
+            # Preferred provider first, then the rest of the chain so a dead
+            # primary (EOL model, revoked key, exhausted quota) still falls
+            # through to local Ollama instead of failing the whole request.
+            candidates = [resolved_provider] + [
+                p for p in settings.PROVIDER_RATE_LIMITS if p != resolved_provider
+            ]
             
         last_error: Exception | None = None
 
@@ -258,7 +263,9 @@ class LLMRouter:
     def _resolve_candidates(self, overrides) -> list[str]:
         """Return an ordered list of providers to try."""
         if overrides.llm_provider:
-            return [overrides.llm_provider]
+            return [overrides.llm_provider] + [
+                p for p in settings.PROVIDER_RATE_LIMITS if p != overrides.llm_provider
+            ]
         return list(settings.PROVIDER_RATE_LIMITS.keys())
 
     def _provider_available(self, provider: str, overrides) -> bool:
