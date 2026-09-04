@@ -118,6 +118,8 @@ def init_db() -> None:
             cols = [r["name"] for r in cur.fetchall()]
             if "user_id" not in cols:
                 _conn.execute("ALTER TABLE applications ADD COLUMN user_id TEXT NOT NULL DEFAULT 'local'")
+            if "updated_at" not in cols:
+                _conn.execute("ALTER TABLE applications ADD COLUMN updated_at TEXT")
         except Exception as exc:
             logger.debug("Migration for applications failed or unneeded: %s", exc)
 
@@ -322,8 +324,8 @@ def update_application(
     with _lock:
         conn = _get_conn()
         conn.execute(
-            "UPDATE applications SET status = ?, notes = ? WHERE job_id = ? AND user_id = ?",
-            (existing["status"], existing["notes"], job_id, user_id),
+            "UPDATE applications SET status = ?, notes = ?, updated_at = ? WHERE job_id = ? AND user_id = ?",
+            (existing["status"], existing["notes"], _now_iso(), job_id, user_id),
         )
         conn.commit()
     return existing
@@ -336,3 +338,63 @@ def delete_application(job_id: str, user_id: str = "local") -> bool:
         )
         _get_conn().commit()
         return cur.rowcount > 0
+
+
+def get_tracker_stats(user_id: str = "local") -> dict:
+    with _lock:
+        conn = _get_conn()
+        rows = conn.execute(
+            "SELECT * FROM applications WHERE user_id = ?", (user_id,)
+        ).fetchall()
+    
+    if not rows:
+        return {
+            "total": 0, "by_status": {}, "avg_match_score": 0.0, "interview_rate": 0.0,
+            "source_breakdown": {}, "oldest_pending_days": None, "days_in_stage": {}
+        }
+
+    total = len(rows)
+    by_status = {}
+    source_breakdown = {}
+    total_score = 0.0
+    interview_count = 0
+    oldest_pending_days = None
+    days_in_stage = {}
+
+    now = datetime.now(timezone.utc)
+
+    for row in rows:
+        r = dict(row)
+        status = r["status"]
+        by_status[status] = by_status.get(status, 0) + 1
+        source_breakdown[r.get("source") or "unknown"] = source_breakdown.get(r.get("source") or "unknown", 0) + 1
+        total_score += r.get("match_score", 0.0)
+        
+        if status == "interview":
+            interview_count += 1
+            
+        # Calculate days in current stage
+        updated_at = r.get("updated_at") or r.get("date_applied")
+        if updated_at:
+            try:
+                last_update = datetime.fromisoformat(updated_at)
+                if last_update.tzinfo is None:
+                    last_update = last_update.replace(tzinfo=timezone.utc)
+                days = (now - last_update).days
+                days_in_stage[r["job_id"]] = days
+                
+                if status == "applied":
+                    if oldest_pending_days is None or days > oldest_pending_days:
+                        oldest_pending_days = days
+            except ValueError:
+                pass
+
+    return {
+        "total": total,
+        "by_status": by_status,
+        "avg_match_score": round(total_score / total, 2),
+        "interview_rate": round(interview_count / total, 2),
+        "source_breakdown": source_breakdown,
+        "oldest_pending_days": oldest_pending_days,
+        "days_in_stage": days_in_stage
+    }

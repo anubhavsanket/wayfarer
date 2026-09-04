@@ -7,6 +7,7 @@ import type {
   ResumeCheckResponse,
   SavedJob,
   SearchResponse,
+  TrackerStats,
 } from "./types";
 import { buildAuthHeaders } from "@/stores/settings";
 
@@ -165,12 +166,15 @@ export const api = {
       method: "DELETE",
     }),
 
-  // Cover letter
-  coverLetter: (resumeId: string, job: Record<string, unknown>) =>
-    request<CoverLetterResponse>("/api/v1/tracker/cover-letter", {
-      method: "POST",
-      body: JSON.stringify({ resume_id: resumeId, job }),
-    }),
+// Cover letter
+coverLetter: (resumeId: string, job: Record<string, unknown>, tone: string = "professional") =>
+  request<CoverLetterResponse>("/api/v1/tracker/cover-letter", {
+    method: "POST",
+    body: JSON.stringify({ resume_id: resumeId, job, tone }),
+  }),
+
+// Tracker stats
+getTrackerStats: () => request<TrackerStats>("/api/v1/tracker/stats"),
 
   // OAuth & Multi-tenant User Settings
   authLogin: (payload: {

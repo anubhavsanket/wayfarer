@@ -130,3 +130,13 @@ export interface Application {
 export interface CoverLetterResponse {
   cover_letter: string;
 }
+
+export interface TrackerStats {
+  total: number;
+  by_status: Record<string, number>;
+  avg_match_score: number;
+  interview_rate: number;
+  source_breakdown: Record<string, number>;
+  oldest_pending_days: number | null;
+  days_in_stage: Record<string, number>;
+}

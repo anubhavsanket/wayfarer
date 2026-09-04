@@ -267,8 +267,21 @@ class Application(BaseModel):
 class CoverLetterRequest(BaseModel):
     resume_id: str
     job: dict
+    tone: str = "professional" # professional | enthusiastic | concise
 
 
 class CoverLetterResponse(BaseModel):
     cover_letter: str
+
+
+# ---------- Tracker Stats ----------
+
+class TrackerStats(BaseModel):
+    total: int
+    by_status: dict[str, int]
+    avg_match_score: float
+    interview_rate: float
+    source_breakdown: dict[str, int]
+    oldest_pending_days: int | None = None
+    days_in_stage: dict[str, int] = Field(default_factory=dict) # job_id -> days in current stage
 

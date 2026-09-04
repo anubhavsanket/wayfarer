@@ -1,18 +1,19 @@
 import { BrowserRouter as Router, Routes, Route, NavLink, useLocation } from 'react-router-dom';
 import { Tabs, TabsList, TabsTrigger } from "@radix-ui/react-tabs";
-import { Search, FileText, Briefcase, Settings, Sun, Moon } from "lucide-react";
+import { Search, FileText, Briefcase, Settings, Sun, Moon, LayoutDashboard } from "lucide-react";
 import { useTheme } from "@/stores/theme";
 import { Reveal } from "@/components/Reveal";
 import SearchPage from "./pages/Search";
 import ResumeCheckPage from "./pages/ResumeCheck";
 import JobMatchPage from "./pages/JobMatch";
+import TrackerPage from "./pages/Tracker";
 import SettingsPage from "./pages/Settings";
 
 function NavLinks() {
   const { theme, toggle } = useTheme();
   const location = useLocation();
 
-  const currentTab = location.pathname === '/' ? 'settings' : location.pathname.substring(1);
+  const currentTab = location.pathname === '/' ? 'settings' : location.pathname.substring(1).split('/')[0];
 
   return (
     <header className="sticky top-0 z-40 border-b border-border/60 bg-background/80 backdrop-blur-md">
@@ -44,6 +45,14 @@ function NavLinks() {
                 <TabsTrigger value="jobs" className="group inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 text-[13px] font-medium text-muted-foreground transition-colors hover:text-foreground data-[state=active]:bg-card data-[state=active]:text-foreground data-[state=active]:shadow-sm data-[state=active]:border data-[state=active]:border-border">
                   <Briefcase className="h-3.5 w-3.5" />
                   <span className="hidden sm:inline">Jobs</span>
+                </TabsTrigger>
+              )}
+            </NavLink>
+            <NavLink to="/tracker">
+              {() => (
+                <TabsTrigger value="tracker" className="group inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 text-[13px] font-medium text-muted-foreground transition-colors hover:text-foreground data-[state=active]:bg-card data-[state=active]:text-foreground data-[state=active]:shadow-sm data-[state=active]:border data-[state=active]:border-border">
+                  <LayoutDashboard className="h-3.5 w-3.5" />
+                  <span className="hidden sm:inline">Pipeline</span>
                 </TabsTrigger>
               )}
             </NavLink>
@@ -96,10 +105,11 @@ export default function App() {
 
         <main className="mx-auto w-full max-w-5xl flex-1 px-4 py-8 sm:px-6">
           <Reveal>
-            <Routes>
+              <Routes>
               <Route path="/search" element={<SearchPage />} />
               <Route path="/resume" element={<ResumeCheckPage />} />
               <Route path="/jobs" element={<JobMatchPage />} />
+              <Route path="/tracker" element={<TrackerPage />} />
               <Route path="/" element={<SettingsPage />} />
             </Routes>
           </Reveal>

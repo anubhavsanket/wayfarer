@@ -20,6 +20,7 @@ from ..models.schemas import (
     CoverLetterResponse,
     SavedJob,
     SavedJobCreate,
+    TrackerStats,
 )
 
 logger = logging.getLogger(__name__)
@@ -108,6 +109,14 @@ async def delete_application(job_id: str, user: User = Depends(get_current_user)
 
 
 # ---------------------------------------------------------------------------
+# Tracker stats
+# ---------------------------------------------------------------------------
+
+@router.get("/stats", response_model=TrackerStats)
+async def get_tracker_stats(user: User = Depends(get_current_user)):
+    return await _run(db.get_tracker_stats, user_id=user.user_id)
+
+# ---------------------------------------------------------------------------
 # Cover letter
 # ---------------------------------------------------------------------------
 
@@ -117,7 +126,7 @@ async def cover_letter(body: CoverLetterRequest):
     from ..services.cover_letter import generate_cover_letter
 
     try:
-        text = await generate_cover_letter(body.resume_id, body.job)
+        text = await generate_cover_letter(body.resume_id, body.job, tone=body.tone)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     return CoverLetterResponse(cover_letter=text)

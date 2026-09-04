@@ -27,12 +27,13 @@ function CoverLetterModal({
   open: boolean;
   onOpenChange: (v: boolean) => void;
   resumeId: string;
-  job: { title: string; company: string; job_id: string };
+  job: { title: string; company: string; job_id: string; description?: string; jd_text?: string };
 }) {
   const [text, setText] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
+  const [tone, setTone] = useState("professional");
 
   useEffect(() => {
     if (!open) return;
@@ -41,13 +42,13 @@ function CoverLetterModal({
     setCopied(false);
     setLoading(true);
     api
-      .coverLetter(resumeId, job)
+      .coverLetter(resumeId, job, tone)
       .then((r) => setText(r.cover_letter))
       .catch((e) =>
         setError(e instanceof ApiError ? e.message : "Failed to draft cover letter."),
       )
       .finally(() => setLoading(false));
-  }, [open, resumeId, job]);
+  }, [open, resumeId, job, tone]);
 
   const copy = async () => {
     try {
@@ -80,7 +81,27 @@ function CoverLetterModal({
             </Dialog.Close>
           </div>
 
-          {loading && <LoadingIndicator message="Drafting cover letter" />}
+          <div className="mb-4 flex items-center gap-2">
+            <label className="text-xs font-medium">Tone:</label>
+            <select
+              value={tone}
+              onChange={(e) => setTone(e.target.value)}
+              className="rounded-md border border-border bg-card px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-blue"
+            >
+              <option value="professional">Professional</option>
+              <option value="enthusiastic">Enthusiastic</option>
+              <option value="concise">Concise</option>
+            </select>
+          </div>
+
+          {loading && (
+            <div className="space-y-2">
+              <div className="h-4 w-3/4 animate-pulse rounded bg-muted" />
+              <div className="h-4 w-full animate-pulse rounded bg-muted" />
+              <div className="h-4 w-5/6 animate-pulse rounded bg-muted" />
+              <div className="mt-4 h-4 w-1/2 animate-pulse rounded bg-muted" />
+            </div>
+          )}
           {error && (
             <div className="rounded-md border border-destructive bg-destructive/10 p-3 text-sm text-destructive">
               {error}
@@ -119,7 +140,7 @@ export function TrackerPanel({
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [coverJob, setCoverJob] = useState<{
-    job_id: string; title: string; company: string;
+    job_id: string; title: string; company: string; jd_text?: string;
   } | null>(null);
 
   const reload = () => {
@@ -229,7 +250,7 @@ export function TrackerPanel({
                             </a>
                           )}
                           <button
-                            onClick={() => setCoverJob({ job_id: a.job_id, title: a.title, company: a.company })}
+                            onClick={() => setCoverJob({ job_id: a.job_id, title: a.title, company: a.company, jd_text: a.notes || "" })}
                             className="text-xs text-muted-foreground underline hover:text-foreground"
                           >
                             Draft cover letter
@@ -284,6 +305,12 @@ export function TrackerPanel({
                   </div>
                 )}
               </section>
+              
+              <div className="pt-2 border-t border-border">
+                <a href="/tracker" className="text-xs text-blue hover:underline block text-center">
+                  View full pipeline
+                </a>
+              </div>
             </div>
           )}
 
