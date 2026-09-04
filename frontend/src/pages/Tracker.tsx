@@ -241,7 +241,7 @@ function KanbanCard({
             <Clock className="h-3 w-3" /> {daysInStage}d
           </span>
         )}
-        <div className="relative ml-auto">
+        <div className="relative">
           <button
             onClick={() => setShowMenu(!showMenu)}
             className="flex items-center gap-1 rounded border border-border px-2 py-0.5 hover:bg-accent"
@@ -249,20 +249,23 @@ function KanbanCard({
             Move <ChevronDown className="h-3 w-3" />
           </button>
           {showMenu && (
-            <div className="absolute right-0 bottom-full mb-1 z-10 w-32 rounded-md border border-border bg-card shadow-md">
-              {STATUSES.filter((s) => s !== app.status).map((s) => (
-                <button
-                  key={s}
-                  onClick={() => {
-                    onUpdateStatus(app.job_id, s);
-                    setShowMenu(false);
-                  }}
-                  className="w-full text-left px-3 py-1.5 text-xs hover:bg-accent capitalize"
-                >
-                  {s}
-                </button>
-              ))}
-            </div>
+            <>
+              <div className="fixed inset-0 z-10" onClick={() => setShowMenu(false)} />
+              <div className="absolute right-0 top-full mt-1 z-20 w-32 rounded-md border border-border bg-card shadow-md">
+                {STATUSES.filter((s) => s !== app.status).map((s) => (
+                  <button
+                    key={s}
+                    onClick={() => {
+                      onUpdateStatus(app.job_id, s);
+                      setShowMenu(false);
+                    }}
+                    className="w-full text-left px-3 py-1.5 text-xs hover:bg-accent capitalize first:rounded-t-md last:rounded-b-md"
+                  >
+                    {s}
+                  </button>
+                ))}
+              </div>
+            </>
           )}
         </div>
       </div>

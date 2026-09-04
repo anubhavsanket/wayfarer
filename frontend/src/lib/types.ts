@@ -80,6 +80,7 @@ export interface JobMatch {
   location_match: LocationMatch;
   top_gaps: string[];
   apply_url: string;
+  posted_at?: string | null;
   flags?: string[];
   experience_level?: "fresher" | "junior" | "mid" | "senior" | "unclear";
   min_experience_years?: number | null;

@@ -151,6 +151,7 @@ class JobMatch(BaseModel):
     location_match: LocationMatch
     top_gaps: list[str]
     apply_url: str
+    posted_at: str | None = None
     flags: list[str] = Field(
         default_factory=list,
         description="Legitimacy flags: ghost/vague/unknown_company/sponsorship",

@@ -264,6 +264,18 @@ async def _classify_experience(jd_text: str) -> dict[str, Any]:
         return cached
 
     VALID_LEVELS = {"fresher", "junior", "mid", "senior", "unclear"}
+    # Map common LLM synonyms to canonical levels
+    SYNONYM_MAP = {
+        "entry-level": "junior",
+        "entry level": "junior",
+        "beginner": "fresher",
+        "graduate": "fresher",
+        "experienced": "mid",
+        "principal": "senior",
+        "staff": "senior",
+        "lead": "senior",
+        "expert": "senior",
+    }
     try:
         resp = await router.chat(
             messages=[{"role": "user", "content": _CLASSIFICATION_PROMPT.format(text=jd_text[:1500])}],
@@ -273,7 +285,11 @@ async def _classify_experience(jd_text: str) -> dict[str, Any]:
         )
         result = extract_json(resp["content"])
         level = result.get("experience_level", "unclear")
-        if level not in VALID_LEVELS:
+        # Apply synonym map before canonical validation
+        level_lower = level.lower()
+        if level_lower in SYNONYM_MAP:
+            level = SYNONYM_MAP[level_lower]
+        elif level_lower not in VALID_LEVELS:
             level = "unclear"
         final_result = {
             "experience_level": level,
@@ -319,6 +335,7 @@ async def _match_one(
         location_match=LocationMatch.NONE,
         top_gaps=top_gaps,
         apply_url=posting.url,
+        posted_at=posting.fetched_at.isoformat() if posting.fetched_at else None,
         flags=flags,
         experience_level=ExperienceLevel(exp_class["experience_level"]),
         min_experience_years=exp_class["min_experience_years"],

@@ -437,6 +437,12 @@ export default function JobMatchPage() {
         return false;
       }
     }
+    if (appliedFilters.maxAgeDays < 90 && job.posted_at) {
+      const age = (Date.now() - new Date(job.posted_at).getTime()) / (1000 * 60 * 60 * 24);
+      if (age > appliedFilters.maxAgeDays) {
+        return false;
+      }
+    }
     return true;
   });
 
@@ -447,6 +453,12 @@ export default function JobMatchPage() {
     if (appliedFilters.sourceFilter) {
       const active = appliedFilters.sourceFilter.split(",").map((s) => s.trim().toLowerCase());
       if (active.length > 0 && !active.includes(job.source.toLowerCase())) {
+        return false;
+      }
+    }
+    if (appliedFilters.maxAgeDays < 90 && job.posted_at) {
+      const age = (Date.now() - new Date(job.posted_at).getTime()) / (1000 * 60 * 60 * 24);
+      if (age > appliedFilters.maxAgeDays) {
         return false;
       }
     }
