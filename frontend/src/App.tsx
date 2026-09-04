@@ -1,7 +1,9 @@
-import { BrowserRouter as Router, Routes, Route, NavLink, useLocation } from 'react-router-dom';
+import { useEffect, useState } from "react";
+import { BrowserRouter as Router, Routes, Route, NavLink, useLocation } from "react-router-dom";
 import { Tabs, TabsList, TabsTrigger } from "@radix-ui/react-tabs";
 import { Search, FileText, Briefcase, Settings, Sun, Moon, LayoutDashboard } from "lucide-react";
 import { useTheme } from "@/stores/theme";
+import { api } from "@/lib/api";
 import { Reveal } from "@/components/Reveal";
 import SearchPage from "./pages/Search";
 import ResumeCheckPage from "./pages/ResumeCheck";
@@ -9,11 +11,32 @@ import JobMatchPage from "./pages/JobMatch";
 import TrackerPage from "./pages/Tracker";
 import SettingsPage from "./pages/Settings";
 
+const PIPELINE_LAST_VISITED_KEY = "last_visited_pipeline_ts";
+
 function NavLinks() {
   const { theme, toggle } = useTheme();
   const location = useLocation();
+  const [notifCount, setNotifCount] = useState(0);
 
-  const currentTab = location.pathname === '/' ? 'settings' : location.pathname.substring(1).split('/')[0];
+  const currentTab = location.pathname === "/" ? "settings" : location.pathname.substring(1).split("/")[0];
+
+  // Check for notifications on mount and when location changes
+  useEffect(() => {
+    const lastVisited = localStorage.getItem(PIPELINE_LAST_VISITED_KEY);
+    if (lastVisited) {
+      api
+        .getNotifications(lastVisited)
+        .then((r) => setNotifCount(r.total))
+        .catch(() => {});
+    }
+  }, []);
+
+  // Dismiss notifications when user visits the pipeline page
+  useEffect(() => {
+    if (currentTab === "tracker") {
+      setNotifCount(0);
+    }
+  }, [currentTab]);
 
   return (
     <header className="sticky top-0 z-40 border-b border-border/60 bg-background/80 backdrop-blur-md">
@@ -48,11 +71,16 @@ function NavLinks() {
                 </TabsTrigger>
               )}
             </NavLink>
-            <NavLink to="/tracker">
+            <NavLink to="/tracker" onClick={() => localStorage.setItem(PIPELINE_LAST_VISITED_KEY, new Date().toISOString())}>
               {() => (
-                <TabsTrigger value="tracker" className="group inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 text-[13px] font-medium text-muted-foreground transition-colors hover:text-foreground data-[state=active]:bg-card data-[state=active]:text-foreground data-[state=active]:shadow-sm data-[state=active]:border data-[state=active]:border-border">
+                <TabsTrigger value="tracker" className="group relative inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 text-[13px] font-medium text-muted-foreground transition-colors hover:text-foreground data-[state=active]:bg-card data-[state=active]:text-foreground data-[state=active]:shadow-sm data-[state=active]:border data-[state=active]:border-border">
                   <LayoutDashboard className="h-3.5 w-3.5" />
                   <span className="hidden sm:inline">Pipeline</span>
+                  {notifCount > 0 && (
+                    <span className="absolute -right-1 -top-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-destructive px-1 text-[10px] font-bold text-white leading-none">
+                      {notifCount > 9 ? "9+" : notifCount}
+                    </span>
+                  )}
                 </TabsTrigger>
               )}
             </NavLink>

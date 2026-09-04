@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import * as Dialog from "@radix-ui/react-dialog";
 import {
-  Briefcase, Bookmark, X, ExternalLink, Trash2, FileText, Check,
+  Briefcase, Bookmark, X, ExternalLink, Trash2, FileText, Check, Mail,
 } from "lucide-react";
 
 import { api, ApiError } from "@/lib/api";
@@ -126,6 +126,125 @@ function CoverLetterModal({
   );
 }
 
+/* ── Follow-up email modal ──────────────────────────────────────────── */
+
+const FOLLOW_UP_STAGES: Record<string, { label: string; description: string }> = {
+  post_application: { label: "Post-Application Nudge", description: "Gentle check-in after applying" },
+  post_interview: { label: "Post-Interview Thank-You", description: "Thank the interviewer" },
+  offer: { label: "Offer Acceptance", description: "Accept the offer graciously" },
+  rejection: { label: "Rejection Reply", description: "Graceful reply to a rejection" },
+};
+
+function FollowUpModal({
+  open, onOpenChange, resumeId, job, initialStage, daysSince,
+}: {
+  open: boolean;
+  onOpenChange: (v: boolean) => void;
+  resumeId: string;
+  job: { title: string; company: string; job_id: string; jd_text?: string };
+  initialStage: string;
+  daysSince?: number;
+}) {
+  const [text, setText] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [copied, setCopied] = useState(false);
+  const [stage, setStage] = useState(initialStage);
+
+  useEffect(() => {
+    if (!open) return;
+    setText("");
+    setError(null);
+    setCopied(false);
+    setLoading(true);
+    api
+      .followUp(resumeId, job, stage, daysSince)
+      .then((r) => setText(r.email))
+      .catch((e) =>
+        setError(e instanceof ApiError ? e.message : "Failed to draft email."),
+      )
+      .finally(() => setLoading(false));
+  }, [open, resumeId, job, stage, daysSince]);
+
+  const copy = async () => {
+    try {
+      await navigator.clipboard.writeText(text);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1500);
+    } catch {
+      /* clipboard unavailable */
+    }
+  };
+
+  const stageInfo = FOLLOW_UP_STAGES[stage] || FOLLOW_UP_STAGES.post_application;
+
+  return (
+    <Dialog.Root open={open} onOpenChange={onOpenChange}>
+      <Dialog.Portal>
+        <Dialog.Overlay className="fixed inset-0 z-50 bg-black/40" />
+        <Dialog.Content className="fixed left-1/2 top-1/2 z-50 w-[min(92vw,680px)] -translate-x-1/2 -translate-y-1/2 rounded-lg border border-border bg-white p-6 shadow-lg dark:border-border dark:bg-card">
+          <div className="mb-3 flex items-start justify-between gap-4">
+            <div>
+              <Dialog.Title className="font-display text-lg font-bold">
+                <Mail className="mr-2 inline h-4 w-4" />
+                {stageInfo.label}
+              </Dialog.Title>
+              <Dialog.Description className="text-xs text-muted-foreground">
+                {job.title} at {job.company} — {stageInfo.description}
+              </Dialog.Description>
+            </div>
+            <Dialog.Close asChild>
+              <button className="rounded-md p-1 hover:bg-beige-deep" aria-label="Close">
+                <X className="h-4 w-4" />
+              </button>
+            </Dialog.Close>
+          </div>
+
+          <div className="mb-4 flex items-center gap-2">
+            <label className="text-xs font-medium">Stage:</label>
+            <select
+              value={stage}
+              onChange={(e) => setStage(e.target.value)}
+              className="rounded-md border border-border bg-card px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-blue"
+            >
+              {Object.entries(FOLLOW_UP_STAGES).map(([key, info]) => (
+                <option key={key} value={key}>{info.label}</option>
+              ))}
+            </select>
+          </div>
+
+          {loading && (
+            <div className="space-y-2">
+              <div className="h-4 w-3/4 animate-pulse rounded bg-muted" />
+              <div className="h-4 w-full animate-pulse rounded bg-muted" />
+              <div className="h-4 w-5/6 animate-pulse rounded bg-muted" />
+              <div className="mt-4 h-4 w-1/2 animate-pulse rounded bg-muted" />
+            </div>
+          )}
+          {error && (
+            <div className="rounded-md border border-destructive bg-destructive/10 p-3 text-sm text-destructive">
+              {error}
+            </div>
+          )}
+          {!loading && !error && (
+            <>
+              <div className="max-h-[50vh] overflow-y-auto whitespace-pre-wrap rounded-md border border-border bg-background p-4 text-sm leading-relaxed">
+                {text}
+              </div>
+              <div className="mt-3 flex justify-end gap-2">
+                <Button onClick={copy} variant="outline" size="sm">
+                  {copied ? <Check className="h-3.5 w-3.5" /> : <FileText className="h-3.5 w-3.5" />}
+                  {copied ? "Copied" : "Copy"}
+                </Button>
+              </div>
+            </>
+          )}
+        </Dialog.Content>
+      </Dialog.Portal>
+    </Dialog.Root>
+  );
+}
+
 /* ── Tracker panel ──────────────────────────────────────────────────── */
 
 export function TrackerPanel({
@@ -141,6 +260,9 @@ export function TrackerPanel({
   const [error, setError] = useState<string | null>(null);
   const [coverJob, setCoverJob] = useState<{
     job_id: string; title: string; company: string; jd_text?: string;
+  } | null>(null);
+  const [followJob, setFollowJob] = useState<{
+    job_id: string; title: string; company: string; jd_text?: string; stage: string; daysSince?: number;
   } | null>(null);
 
   const reload = () => {
@@ -253,7 +375,18 @@ export function TrackerPanel({
                             onClick={() => setCoverJob({ job_id: a.job_id, title: a.title, company: a.company, jd_text: a.notes || "" })}
                             className="text-xs text-muted-foreground underline hover:text-foreground"
                           >
-                            Draft cover letter
+                            Cover letter
+                          </button>
+                          <button
+                            onClick={() => setFollowJob({
+                              job_id: a.job_id, title: a.title, company: a.company,
+                              jd_text: a.notes || "", stage: a.status === "applied" ? "post_application"
+                                : a.status === "interview" ? "post_interview"
+                                : a.status === "offer" ? "offer" : "rejection",
+                            })}
+                            className="text-xs text-muted-foreground underline hover:text-foreground"
+                          >
+                            Follow-up
                           </button>
                         </div>
                       </div>
@@ -320,6 +453,15 @@ export function TrackerPanel({
               onOpenChange={(v) => { if (!v) setCoverJob(null); }}
               resumeId={resumeId}
               job={coverJob}
+            />
+          )}
+          {followJob && (
+            <FollowUpModal
+              open
+              onOpenChange={(v) => { if (!v) setFollowJob(null); }}
+              resumeId={resumeId}
+              job={{ title: followJob.title, company: followJob.company, job_id: followJob.job_id, jd_text: followJob.jd_text }}
+              initialStage={followJob.stage}
             />
           )}
         </Dialog.Content>

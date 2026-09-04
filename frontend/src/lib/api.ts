@@ -2,8 +2,10 @@ import type {
   Application,
   ApplicationStatus,
   CoverLetterResponse,
+  FollowUpResponse,
   HealthResponse,
   JobMatchResponse,
+  NotificationsResponse,
   ResumeCheckResponse,
   SavedJob,
   SearchResponse,
@@ -175,6 +177,17 @@ coverLetter: (resumeId: string, job: Record<string, unknown>, tone: string = "pr
 
 // Tracker stats
 getTrackerStats: () => request<TrackerStats>("/api/v1/tracker/stats"),
+
+// Notifications
+getNotifications: (since: string) =>
+  request<NotificationsResponse>(`/api/v1/tracker/notifications?since=${encodeURIComponent(since)}`),
+
+// Follow-up email
+followUp: (resumeId: string, job: Record<string, unknown>, stage: string, daysSince?: number) =>
+  request<FollowUpResponse>("/api/v1/tracker/follow-up", {
+    method: "POST",
+    body: JSON.stringify({ resume_id: resumeId, job, stage, days_since: daysSince }),
+  }),
 
   // OAuth & Multi-tenant User Settings
   authLogin: (payload: {

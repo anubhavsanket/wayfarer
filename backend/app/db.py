@@ -340,6 +340,30 @@ def delete_application(job_id: str, user_id: str = "local") -> bool:
         return cur.rowcount > 0
 
 
+def get_notifications(user_id: str = "local", since_iso: str | None = None) -> dict:
+    """Return counts of new and updated items since the given timestamp."""
+    if since_iso is None:
+        return {"new_applications": 0, "status_changes": 0, "total": 0}
+
+    with _lock:
+        conn = _get_conn()
+        new_apps = conn.execute(
+            "SELECT COUNT(*) as cnt FROM applications WHERE user_id = ? AND date_applied > ?",
+            (user_id, since_iso),
+        ).fetchone()["cnt"]
+
+        status_changes = conn.execute(
+            "SELECT COUNT(*) as cnt FROM applications WHERE user_id = ? AND updated_at > ?",
+            (user_id, since_iso),
+        ).fetchone()["cnt"]
+
+    return {
+        "new_applications": new_apps,
+        "status_changes": status_changes,
+        "total": new_apps + status_changes,
+    }
+
+
 def get_tracker_stats(user_id: str = "local") -> dict:
     with _lock:
         conn = _get_conn()

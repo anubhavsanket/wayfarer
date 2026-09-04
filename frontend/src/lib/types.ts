@@ -131,6 +131,10 @@ export interface CoverLetterResponse {
   cover_letter: string;
 }
 
+export interface FollowUpResponse {
+  email: string;
+}
+
 export interface TrackerStats {
   total: number;
   by_status: Record<string, number>;
@@ -139,4 +143,10 @@ export interface TrackerStats {
   source_breakdown: Record<string, number>;
   oldest_pending_days: number | null;
   days_in_stage: Record<string, number>;
+}
+
+export interface NotificationsResponse {
+  new_applications: number;
+  status_changes: number;
+  total: number;
 }

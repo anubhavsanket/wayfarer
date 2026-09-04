@@ -18,6 +18,9 @@ from ..models.schemas import (
     ApplicationUpdate,
     CoverLetterRequest,
     CoverLetterResponse,
+    FollowUpRequest,
+    FollowUpResponse,
+    NotificationsResponse,
     SavedJob,
     SavedJobCreate,
     TrackerStats,
@@ -116,6 +119,11 @@ async def delete_application(job_id: str, user: User = Depends(get_current_user)
 async def get_tracker_stats(user: User = Depends(get_current_user)):
     return await _run(db.get_tracker_stats, user_id=user.user_id)
 
+
+@router.get("/notifications", response_model=NotificationsResponse)
+async def get_notifications(since: str = "", user: User = Depends(get_current_user)):
+    return await _run(db.get_notifications, user_id=user.user_id, since_iso=since or None)
+
 # ---------------------------------------------------------------------------
 # Cover letter
 # ---------------------------------------------------------------------------
@@ -130,3 +138,19 @@ async def cover_letter(body: CoverLetterRequest):
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     return CoverLetterResponse(cover_letter=text)
+
+
+# ---------------------------------------------------------------------------
+# Follow-up email
+# ---------------------------------------------------------------------------
+
+
+@router.post("/follow-up", response_model=FollowUpResponse)
+async def follow_up(body: FollowUpRequest):
+    from ..services.follow_up import generate_follow_up
+
+    try:
+        text = await generate_follow_up(body.resume_id, body.job, body.stage, body.days_since)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return FollowUpResponse(email=text)

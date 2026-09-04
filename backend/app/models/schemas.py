@@ -274,6 +274,19 @@ class CoverLetterResponse(BaseModel):
     cover_letter: str
 
 
+# ---------- Follow-up email ----------
+
+class FollowUpRequest(BaseModel):
+    resume_id: str
+    job: dict
+    stage: str # post_application | post_interview | offer | rejection
+    days_since: int | None = None
+
+
+class FollowUpResponse(BaseModel):
+    email: str
+
+
 # ---------- Tracker Stats ----------
 
 class TrackerStats(BaseModel):
@@ -284,4 +297,12 @@ class TrackerStats(BaseModel):
     source_breakdown: dict[str, int]
     oldest_pending_days: int | None = None
     days_in_stage: dict[str, int] = Field(default_factory=dict) # job_id -> days in current stage
+
+
+# ---------- Notifications ----------
+
+class NotificationsResponse(BaseModel):
+    new_applications: int
+    status_changes: int
+    total: int
 

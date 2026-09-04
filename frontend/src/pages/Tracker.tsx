@@ -10,6 +10,8 @@ import { Card } from "@/components/ui/card";
 import { Sticker } from "@/components/ui/badge";
 import { LoadingIndicator } from "@/components/LoadingIndicator";
 
+const PIPELINE_LAST_VISITED_KEY = "last_visited_pipeline_ts";
+
 const STATUSES: ApplicationStatus[] = ["applied", "interview", "offer", "rejected"];
 const STATUS_COLORS: Record<ApplicationStatus, string> = {
   applied: "bg-cyan/10 border-cyan/30",
@@ -37,6 +39,11 @@ export default function TrackerPage() {
   };
 
   useEffect(() => { reload(); }, []);
+
+  // Record visit timestamp for notification badge
+  useEffect(() => {
+    localStorage.setItem(PIPELINE_LAST_VISITED_KEY, new Date().toISOString());
+  }, []);
 
   const updateStatus = (jobId: string, status: ApplicationStatus) =>
     api.updateApplication(jobId, { status }).then(reload).catch((e) => setError(e.message));
