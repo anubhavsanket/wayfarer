@@ -269,7 +269,7 @@ export default function SettingsPage() {
   return (
     <div className="max-w-4xl mx-auto space-y-8 pb-12">
       {/* Header */}
-      <div className="border-b-2 border-ink pb-6">
+      <div className="border-b border-ink/10 pb-6">
         <div className="flex items-center gap-3">
           <SettingsIcon className="h-8 w-8 text-blue" />
           <h1 className="font-display text-4xl font-black text-ink">System Config</h1>
@@ -287,16 +287,16 @@ export default function SettingsPage() {
       {/* LLM Provider */}
       <Card className="p-6">
         <div className="flex items-center justify-between mb-6">
-          <h3 className="font-display text-xl font-bold text-ink">LLM Engine</h3>
-          <span className="text-xs font-mono text-ink-soft uppercase tracking-wider">Tier: Complex/Simple</span>
+          <h3 className="font-display text-xl font-bold text-ink dark:text-foreground">LLM Engine</h3>
+          <span className="text-xs font-mono text-ink-soft dark:text-muted-foreground uppercase tracking-wider">Tier: Complex/Simple</span>
         </div>
         <div className="space-y-6">
           <div className="space-y-1.5">
-            <label className="text-sm font-semibold">Primary Provider</label>
+            <label className="text-sm font-semibold text-foreground">Primary Provider</label>
             <select
               value={settings.llm_provider}
               onChange={(e) => update({ llm_provider: e.target.value })}
-              className="w-full rounded-lg border-2 border-ink bg-card px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue"
+              className="w-full rounded-lg border border-border bg-card px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue dark:border-border dark:bg-card dark:text-foreground dark:focus:ring-cyan"
             >
               {PROVIDERS.map((p) => (
                 <option key={p.value} value={p.value}>{p.label}</option>
@@ -304,7 +304,7 @@ export default function SettingsPage() {
             </select>
           </div>
 
-          <div className="grid md:grid-cols-2 gap-4 border-t border-ink/10 pt-6">
+          <div className="grid md:grid-cols-2 gap-4 border-t border-ink/10 dark:border-border pt-6">
             {settings.llm_provider === "nvidia" && (
               <>
                 <Field label="NVIDIA NIM API Key" value={settings.nvidia_api_key}
@@ -388,14 +388,14 @@ export default function SettingsPage() {
       <div className="flex items-center gap-3 pt-6 border-t border-ink/10">
         <button
           onClick={handleSave}
-          className="inline-flex items-center gap-2 rounded-lg border-2 border-ink bg-blue px-6 py-2.5 font-bold text-white shadow-hard hover:shadow-hard-lg hover:-translate-y-0.5 active:translate-y-0.5 active:shadow-hard-none transition-all"
+          className="inline-flex items-center gap-2 rounded-lg bg-primary px-6 py-2.5 font-semibold text-primary-foreground shadow-sm transition-colors hover:bg-primary/90"
         >
           {saved ? <CheckCircle2 className="h-5 w-5" /> : <Save className="h-5 w-5" />}
           {saved ? "Saved Configuration" : "Save Changes"}
         </button>
         <button
           onClick={reset}
-          className="inline-flex items-center gap-2 rounded-lg border-2 border-ink bg-card px-6 py-2.5 font-bold text-ink hover:bg-beige-deep shadow-hard hover:shadow-hard active:translate-y-0.5 transition-all"
+          className="inline-flex items-center gap-2 rounded-lg border border-input bg-card px-6 py-2.5 font-medium text-foreground shadow-sm transition-colors hover:bg-accent"
         >
           <RotateCcw className="h-5 w-5" />
           Reset

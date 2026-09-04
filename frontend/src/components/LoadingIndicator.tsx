@@ -38,7 +38,7 @@ export function LoadingIndicator({
   return (
     <div
       ref={containerRef}
-      className="flex items-center gap-4 rounded-lg border-2 border-ink bg-card px-5 py-4 shadow-hard-sm"
+      className="flex items-center gap-4 rounded-lg border border-border bg-card px-5 py-4 shadow-sm"
     >
       <div className="flex gap-1.5">
         <span className="dot inline-block h-2.5 w-2.5 rounded-full bg-blue" />

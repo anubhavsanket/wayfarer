@@ -63,7 +63,7 @@ function CoverLetterModal({
     <Dialog.Root open={open} onOpenChange={onOpenChange}>
       <Dialog.Portal>
         <Dialog.Overlay className="fixed inset-0 z-50 bg-black/40" />
-        <Dialog.Content className="fixed left-1/2 top-1/2 z-50 w-[min(92vw,680px)] -translate-x-1/2 -translate-y-1/2 rounded-lg border-2 border-ink bg-cream p-6 shadow-hard-lg dark:border-border dark:bg-card dark:shadow-sm">
+        <Dialog.Content className="fixed left-1/2 top-1/2 z-50 w-[min(92vw,680px)] -translate-x-1/2 -translate-y-1/2 rounded-lg border border-border bg-white p-6 shadow-lg dark:border-border dark:bg-card">
           <div className="mb-3 flex items-start justify-between gap-4">
             <div>
               <Dialog.Title className="font-display text-lg font-bold">
@@ -151,7 +151,7 @@ export function TrackerPanel({
     <Dialog.Root open={open} onOpenChange={onOpenChange}>
       <Dialog.Portal>
         <Dialog.Overlay className="fixed inset-0 z-50 bg-black/40" />
-        <Dialog.Content className="fixed left-1/2 top-1/2 z-50 w-[min(94vw,720px)] -translate-x-1/2 -translate-y-1/2 rounded-lg border-2 border-ink bg-cream p-6 shadow-hard-lg dark:border-border dark:bg-card dark:shadow-sm">
+        <Dialog.Content className="fixed left-1/2 top-1/2 z-50 w-[min(94vw,720px)] -translate-x-1/2 -translate-y-1/2 rounded-lg border border-border bg-white p-6 shadow-lg dark:border-border dark:bg-card">
           <div className="mb-4 flex items-start justify-between">
             <div>
               <Dialog.Title className="font-display text-lg font-bold">

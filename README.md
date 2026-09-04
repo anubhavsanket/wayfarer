@@ -12,7 +12,7 @@ inference would blow the 4 GB VRAM budget.
 
 Current features: Fresher Mode, employment-type classification, LinkedIn
 integration, background pipeline maintenance, Tesseract OCR for embedded images,
-and hybrid neo-brutalist / tactical dark theme UI.
+and a unified minimalist UI aesthetic across light and dark modes.
 
 [![GitHub stars](https://img.shields.io/github/stars/anubhavsanket/wayfarer?style=social)](https://github.com/anubhavsanket/wayfarer)
 [![GitHub license](https://img.shields.io/badge/license-Proprietary-blue.svg)](LICENSE)
@@ -86,7 +86,7 @@ submit applications, fill forms, and click through to third-party sites yourself
   local LLM (qwen3:0.6b) for experience-level classification.
 - **Tesseract OCR** — extracts text from embedded images in DOCX resumes (profile
   photos, diagrams, infographics) so the checker reads parts a plain parser would miss.
-- **Hybrid theme UI** — neo-brutalist light mode, tactical obsidian dark mode,
+- **Unified UI aesthetic** — clean, minimalist interface, tactical dark mode,
   animated score bars, sticker badges, anime.js entrance animations.
 
 ---
@@ -205,8 +205,8 @@ wayfarer/
 │   │   │   ├── types.ts             # Shared TypeScript types
 │   │   │   └── animations.ts        # Anime.js animation helpers
 │   │   ├── styles/
-│   │   │   ├── globals.css          # Hybrid neo-brutalist / tactical design tokens
-│   │   │   └── legacy-neo-brutalist.css # Backup of the original palette
+│   │   │   ├── globals.css          # Unified minimalist design tokens
+│   │   │   └── legacy-neo-brutalist.css # Legacy design system backup
 │   │   └── test/setup.ts            # Vitest setup with matchMedia mock
 │   ├── vite.config.ts               # Vite + Vitest config
 │   ├── tailwind.config.js           # Custom palette + shadow system
@@ -506,7 +506,7 @@ python -m pytest tests/test_docker_e2e.py -v
 | **Side-by-side redlines** | ✅ | Original vs. suggested view in Resume Check |
 | **One-command setup** | ✅ | `bash setup.sh` or curl link |
 | **Tesseract OCR** | ✅ | Extract text from embedded images in DOCX resumes |
-| **Hybrid theme UI** | ✅ | Neo-brutalist light mode + tactical obsidian dark mode |
+| **Unified UI** | ✅ | Clean, unified, minimalist interface + tactical dark mode |
 | **Stored resume** | ✅ | Upload once in Settings, used across all stages |
 | **OOXML track-changes** | ✅ | Resume save outputs Word-compatible tracked changes |
 | **Background refresh queue** | ✅ | Redis-backed job queue for async board refresh |

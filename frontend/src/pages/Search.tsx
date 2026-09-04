@@ -38,7 +38,7 @@ export default function SearchPage() {
       {/* Hero search card */}
       <Card className="relative overflow-hidden p-6">
         {/* Decorative corner accent */}
-        <div className="absolute -right-3 -top-3 h-16 w-16 rotate-12 rounded-lg border-2 border-ink/10 bg-cyan/10" />
+        <div className="absolute -right-3 -top-3 h-16 w-16 rotate-12 rounded-lg border border-ink/10 bg-cyan/10" />
         <h2 className="mb-4 font-display text-xl font-bold">Web Search Agent</h2>
         <p className="mb-5 text-sm text-muted-foreground">
           Search the web and get synthesized answers with inline citations.

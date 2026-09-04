@@ -6,33 +6,25 @@ import { cn } from "@/lib/utils";
 const buttonVariants = cva(
   [
     "inline-flex items-center justify-center whitespace-nowrap rounded-md",
-    "font-sans text-sm font-semibold",
-    "border-2 border-ink select-none",
-    "transition-all duration-150 ease-out",
-    "dark:border dark:border-border dark:rounded-lg dark:font-medium",
-    "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan focus-visible:ring-offset-2 focus-visible:ring-offset-background",
+    "font-sans text-sm font-medium transition-colors",
+    "focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring",
     "disabled:pointer-events-none disabled:opacity-50",
   ].join(" "),
   {
     variants: {
       variant: {
-        default:
-          "bg-blue text-white shadow-hard-blue hover:-translate-y-0.5 hover:shadow-hard-lg active:translate-y-0.5 active:shadow-hard-none dark:shadow-sm dark:hover:bg-blue-deep dark:active:scale-[0.98] dark:hover:translate-y-0",
-        outline:
-          "bg-cream text-ink shadow-hard-sm hover:-translate-y-0.5 hover:shadow-hard active:translate-y-0.5 active:shadow-hard-none dark:bg-card dark:text-foreground dark:border-border dark:shadow-sm dark:hover:bg-beige-deep dark:active:scale-[0.98] dark:hover:translate-y-0",
-        destructive:
-          "bg-destructive text-destructive-foreground shadow-hard-sm hover:-translate-y-0.5 hover:shadow-hard active:translate-y-0.5 active:shadow-hard-none dark:shadow-sm dark:hover:bg-destructive/90 dark:active:scale-[0.98] dark:hover:translate-y-0",
-        secondary:
-          "bg-beige-deep text-ink shadow-hard-sm hover:-translate-y-0.5 hover:shadow-hard active:translate-y-0.5 active:shadow-hard-none dark:bg-beige-deep dark:text-foreground dark:border-border dark:shadow-sm dark:hover:bg-border dark:active:scale-[0.98] dark:hover:translate-y-0",
-        ghost:
-          "border-transparent bg-transparent text-foreground hover:bg-accent hover:text-accent-foreground hover:shadow-none dark:hover:bg-beige-deep",
-        link: "border-transparent bg-transparent text-blue underline underline-offset-4 hover:text-blue/80",
+        default: "bg-primary text-primary-foreground shadow hover:bg-primary/90",
+        outline: "border border-input bg-background hover:bg-accent hover:text-accent-foreground",
+        destructive: "bg-destructive text-destructive-foreground shadow-sm hover:bg-destructive/90",
+        secondary: "bg-secondary text-secondary-foreground shadow-sm hover:bg-secondary/80",
+        ghost: "hover:bg-accent hover:text-accent-foreground",
+        link: "text-primary underline-offset-4 hover:underline",
       },
       size: {
-        default: "h-10 px-4 py-2",
-        sm: "h-9 rounded-md px-3",
-        lg: "h-11 rounded-md px-8 text-base",
-        icon: "h-10 w-10",
+        default: "h-9 px-4 py-2",
+        sm: "h-8 rounded-md px-3 text-xs",
+        lg: "h-10 rounded-md px-8",
+        icon: "h-9 w-9",
       },
     },
     defaultVariants: { variant: "default", size: "default" },

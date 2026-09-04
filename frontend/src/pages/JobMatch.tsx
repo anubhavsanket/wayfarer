@@ -113,7 +113,7 @@ function JobCard({ job, saved, applied,
               disabled={busy}
               title={saved ? "Remove from saved" : "Save for later"}
               aria-label={saved ? "Remove from saved" : "Save for later"}
-              className="inline-flex items-center gap-1 rounded-md border-2 border-ink bg-card px-2 py-1.5 text-xs font-semibold text-foreground shadow-hard-sm transition-all duration-150 hover:-translate-y-0.5 hover:shadow-hard active:translate-y-0.5 active:shadow-hard-none dark:border-border dark:bg-beige-deep dark:shadow-sm"
+              className="inline-flex items-center gap-1 rounded-md border border-border bg-card px-2 py-1.5 text-xs font-medium text-foreground shadow-sm transition-colors dark:border-border dark:bg-beige-deep"
             >
               {saved
                 ? <BookmarkCheck className="h-3 w-3 text-blue" />
@@ -125,7 +125,7 @@ function JobCard({ job, saved, applied,
               disabled={busy || applied}
               title={applied ? "Already tracked as applied" : "Add to application tracker"}
               aria-label="Add to application tracker"
-              className="inline-flex items-center gap-1 rounded-md border-2 border-ink bg-blue px-2 py-1.5 text-xs font-semibold text-white shadow-hard-sm transition-all duration-150 hover:-translate-y-0.5 hover:shadow-hard active:translate-y-0.5 active:shadow-hard-none disabled:opacity-50 disabled:pointer-events-none dark:border-border dark:bg-blue-deep dark:shadow-sm"
+              className="inline-flex items-center gap-1 rounded-md border border-border bg-blue px-2 py-1.5 text-xs font-medium text-white shadow-sm transition-colors disabled:opacity-50 disabled:pointer-events-none dark:border-border dark:bg-blue-deep"
             >
               <ClipboardList className="h-3 w-3" />
               Applied
