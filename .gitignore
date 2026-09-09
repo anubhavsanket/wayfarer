@@ -31,3 +31,7 @@ backend/data/*.db
 .DS_Store
 Thumbs.db
 .claude/
+
+# Local planning docs
+.plans/
+.kilo/
