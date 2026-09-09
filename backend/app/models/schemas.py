@@ -185,6 +185,8 @@ class JobPosting(BaseModel):
     description: str | None = None
     fetched_at: datetime
     jd_id: str | None = None
+    first_seen_at: datetime | None = None
+    grade: str = "unknown"
 
 
 # ---------- Health ----------

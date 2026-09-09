@@ -123,8 +123,47 @@ def init_db() -> None:
         except Exception as exc:
             logger.debug("Migration for applications failed or unneeded: %s", exc)
 
+        # Age grading persistence (first-seen + content hash tracking)
+        _conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS post_history (
+                job_id TEXT PRIMARY KEY,
+                url TEXT,
+                source TEXT,
+                first_seen_at TEXT NOT NULL,
+                last_fetched_at TEXT,
+                content_hash TEXT,
+                grade TEXT DEFAULT 'unknown'
+            )
+            """
+        )
         _conn.commit()
         logger.info("Tracker DB initialised at %s", settings.TRACKER_DB_PATH)
+
+
+def upsert_post_history(job_id: str, url: str, source: str, content_hash: str) -> dict:
+    now = _now_iso()
+    with _lock:
+        conn = _get_conn()
+        existing = conn.execute("SELECT first_seen_at FROM post_history WHERE job_id = ?", (job_id,)).fetchone()
+        if existing:
+            conn.execute(
+                "UPDATE post_history SET last_fetched_at = ?, content_hash = ? WHERE job_id = ?",
+                (now, content_hash, job_id)
+            )
+        else:
+            conn.execute(
+                "INSERT INTO post_history (job_id, url, source, first_seen_at, last_fetched_at, content_hash) VALUES (?, ?, ?, ?, ?, ?)",
+                (job_id, url, source, now, now, content_hash)
+            )
+        conn.commit()
+    return get_post_history(job_id) or {}
+
+
+def get_post_history(job_id: str) -> dict | None:
+    with _lock:
+        row = _get_conn().execute("SELECT * FROM post_history WHERE job_id = ?", (job_id,)).fetchone()
+    return dict(row) if row else None
 
 
 def close_db() -> None:
