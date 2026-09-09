@@ -12,7 +12,9 @@ inference would blow the 4 GB VRAM budget.
 
 Current features: Fresher Mode, employment-type classification, LinkedIn
 integration, background pipeline maintenance, Tesseract OCR for embedded images,
-and a unified minimalist UI aesthetic across light and dark modes.
+post age grading (fresh/stale/re-stamped/ghost badges), pipeline analytics
+(Kanban board + stats), cover letter + follow-up email drafting, application
+tracker with notification bell, and a unified minimalist UI with tactical dark mode.
 
 [![GitHub stars](https://img.shields.io/github/stars/anubhavsanket/wayfarer?style=social)](https://github.com/anubhavsanket/wayfarer)
 [![GitHub license](https://img.shields.io/badge/license-Proprietary-blue.svg)](LICENSE)
@@ -81,9 +83,20 @@ submit applications, fill forms, and click through to third-party sites yourself
   shows up in the output, never dropped.
 - **Multi-provider inference** — rate-limit-aware router with NVIDIA NIM →
   OpenRouter → local Ollama fallback. Free tiers only.
-- **Config-driven job boards** — adding a board is a YAML entry, no code needed.
+- **Post age grading** — `fresh` / `stale` / `re-stamped` / `ghost` badges on JobMatch cards using SQLite `post_history` persistence (first-seen tracking, content-hash comparison, open-jobs pattern).
+- **Job board registry** — `config/job_boards.yaml` drives Stage 3 discovery (bluedoor REST, LinkedIn HTML guest API).
 - **Fresher Mode** — filter postings to entry-level/junior roles using a small
   local LLM (qwen3:0.6b) for experience-level classification.
+- **Posting age grading** — `fresh` / `stale` / `re-stamped` / `ghost` badges on
+  JobMatch cards using `post_history` persistence (first-seen tracking, content
+  hash comparison). Integrated with open-jobs pattern.
+- **Pipeline analytics** — Kanban dashboard (`/tracker`) with conversion funnel
+  stats (interview rate, avg match score, days-in-stage, source breakdown,
+  notification bell for new/updated applications).
+- **Cover letter + follow-up** — Stage-aware draft generation with tone control,
+  using ResumeGraph for token-efficient, grounded prompts.
+- **Application tracker** — Save/apply tracking with pipeline status updates,
+  notes, resume linkage, followed by cover-letter and follow-up drafts.
 - **Tesseract OCR** — extracts text from embedded images in DOCX resumes (profile
   photos, diagrams, infographics) so the checker reads parts a plain parser would miss.
 - **Unified UI aesthetic** — clean, minimalist interface, tactical dark mode,
@@ -176,7 +189,10 @@ wayfarer/
 │   │   │   ├── ats_checker.py       # Stage 2 orchestrator
 │   │   │   ├── resume_saver.py      # Save with/without overwrite
 │   │   │   ├── resume_store.py      # Upload persistence
-│   │   │   ├── job_matcher.py       # Stage 3 orchestrator + Fresher Mode
+│   │   │   ├── job_matcher.py       # Stage 3 orchestrator + Fresher Mode + age grading
+│   │   │   ├── grading.py           # Posting age grade (fresh/stale/re-stamped/ghost)
+│   │   │   ├── cover_letter.py      # Cover letter draft with ResumeGraph
+│   │   │   ├── follow_up.py         # Stage-aware follow-up email draft
 │   │   │   ├── jobs_queue.py        # Redis-backed background refresh queue
 │   │   │   └── legitimacy.py        # Ghost / no-sponsorship checks
 │   │   └── utils/
@@ -191,7 +207,8 @@ wayfarer/
 │   │   ├── pages/
 │   │   │   ├── Search.tsx           # Stage 1 UI
 │   │   │   ├── ResumeCheck.tsx      # Stage 2 UI
-│   │   │   ├── JobMatch.tsx         # Stage 3 UI + Fresher Mode toggle
+│   │   │   ├── JobMatch.tsx         # Stage 3 UI + Fresher Mode + age-grade badges
+│   │   │   ├── Tracker.tsx          # Pipeline analytics (Kanban + stats)
 │   │   │   └── Settings.tsx         # API keys + resume upload
 │   │   ├── components/
 │   │   │   ├── ui/                  # Button, Card, badge (Sticker), progress (ScoreBar)
@@ -499,7 +516,7 @@ python -m pytest tests/test_docker_e2e.py -v
 | **Employment type** | ✅ | full_time/contract/freelance/part_time field on JobMatch |
 | **LinkedIn integration** | ✅ | HTML parsing of guest API (50+ Indian job postings) |
 | **Background refresh** | ✅ | `POST /api/v1/jobs/refresh` — dedup, normalize, stale-drop |
-| **Pipeline integrity** | ✅ | Dedup across sources, TTL cleanup, location normalization |
+| **Pipeline analytics / Tracker** | ✅ | Kanban board (`/tracker`) + stats (interview rate, avg score, conversion funnel, source breakdown, notification bell). |
 | **Structured resume memory** | ✅ | Graph-based entity extraction for token-efficient matching |
 | **Settings dashboard** | ✅ | API keys stored in localStorage, not in git |
 | **LM Studio / custom** | ✅ | Any OpenAI-compatible endpoint works |
