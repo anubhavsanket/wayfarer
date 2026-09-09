@@ -21,6 +21,9 @@ from pydantic import BaseModel, Field
 
 from ..context import get_request_overrides
 from ..models.schemas import JobPosting
+from ..services import grading
+from ..db import upsert_post_history, get_post_history
+from ..services import grading
 
 logger = logging.getLogger(__name__)
 
@@ -111,6 +114,11 @@ def _get_api_key(board: JobBoardEntry) -> str | None:
 
 def load_registry(path: str = "config/job_boards.yaml") -> JobBoardRegistry:
     """Load job board config from the YAML registry."""
+    import os
+    # Resolve path relative to project root (parent of backend/)
+    if not os.path.isabs(path):
+        base_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
+        path = os.path.join(base_dir, path)
     with open(path) as f:
         data = yaml.safe_load(f)
     return JobBoardRegistry.model_validate(data or {"job_boards": []})
@@ -285,7 +293,7 @@ class JobBoardConnector:
         if not company or company == "None":
             company = str(_resolve_path(raw, "$.provider") or "Unknown")
 
-        return JobPosting(
+        posting = JobPosting(
             id=f"{board.name}:{url or title}",
             source=board.name,
             title=str(title),
@@ -296,3 +304,24 @@ class JobBoardConnector:
             description=str(_resolve_path(raw, fm.description) or ""),
             fetched_at=datetime.now(timezone.utc),
         )
+        # Compute posting age grade on fetch (open-jobs pattern)
+        try:
+            # Calculate content hash for re-stamped detection
+            content_text = f"{str(title)}\0{str(_resolve_path(raw, fm.description) or '')}"
+            import hashlib
+            content_hash = hashlib.sha256(content_text.encode("utf-8")).hexdigest()
+            grade = grading.grade_posting(
+                posting.id, posting.fetched_at.isoformat(),
+                posting.url or "", posting.source, posting.title, posting.description,
+            )
+            posting.grade = grade
+            # Persist to SQLite (not just Qdrant) for persistence
+            try:
+                from ..db import upsert_post_history
+                upsert_post_history(posting.id, posting.url or "", posting.source, content_hash)
+            except Exception as exc:
+                logger.debug("Post history persistence failed for %s: %s", posting.id, exc)
+        except Exception as exc:
+            logger.warning("Age grading failed for %s: %s", posting.id, exc)
+            posting.grade = "unknown"
+        return posting
